@@ -1,4 +1,4 @@
-// Tenant submits application form -> save & forward to admin via Telegram.
+// Tenant submits application form -> save & forward to listing owner + super admin via Telegram.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { corsHeaders } from "../_shared/cors.ts";
 import { sendMessage } from "../_shared/telegram.ts";
@@ -22,19 +22,54 @@ Deno.serve(async (req) => {
       safe[k] = String(v ?? "").slice(0, 500);
     }
 
-    await supabase.from("applications").insert({ listing_id: listing_id ?? null, link_group_id: link_group_id ?? null, data: safe });
+    await supabase.from("applications").insert({
+      listing_id: listing_id ?? null,
+      link_group_id: link_group_id ?? null,
+      data: safe,
+    });
 
-    // Look up listing for context
-    let context = "";
+    // Look up listing for context + owner
+    let listingLine = "";
+    let ownerTgId: number | null = null;
+    let listingName = "";
     if (listing_id) {
-      const { data: listing } = await supabase.from("listings").select("address, price, beds").eq("id", listing_id).maybeSingle();
-      if (listing) context = `\n🏠 ${listing.beds ?? "?"} bed at ${listing.address ?? "—"} ($${listing.price ?? "—"})\n`;
+      const { data: listing } = await supabase
+        .from("listings")
+        .select("address, price, beds, link_group_id")
+        .eq("id", listing_id)
+        .maybeSingle();
+      if (listing) {
+        listingName = listing.address ?? `Listing`;
+        listingLine = `\n🏠 <b>${listingName}</b>\n${listing.beds ?? "?"} bed · $${listing.price ?? "—"}\n`;
+        const { data: group } = await supabase
+          .from("link_groups")
+          .select("owner_telegram_id")
+          .eq("id", listing.link_group_id)
+          .maybeSingle();
+        ownerTgId = group?.owner_telegram_id ?? null;
+      }
+    } else if (link_group_id) {
+      const { data: group } = await supabase
+        .from("link_groups")
+        .select("owner_telegram_id")
+        .eq("id", link_group_id)
+        .maybeSingle();
+      ownerTgId = group?.owner_telegram_id ?? null;
     }
 
-    if (ADMIN_ID) {
-      const lines = Object.entries(safe).map(([k, v]) => `<b>${k}</b>: ${v}`).join("\n");
-      const header = kind === "tour" ? "📅 <b>New tour request</b>" : "📝 <b>New application</b>";
-      await sendMessage(ADMIN_ID, `${header}${context}\n${lines}`);
+    const lines = Object.entries(safe).map(([k, v]) => `<b>${k}</b>: ${v}`).join("\n");
+    const header = kind === "tour" ? "📅 <b>New tour request</b>" : "📝 <b>New application</b>";
+    const message = `${header}${listingLine}\n${lines}`;
+
+    // Notify the listing-group owner (the tenant admin)
+    const sentTo = new Set<number>();
+    if (ownerTgId && ownerTgId > 0) {
+      await sendMessage(ownerTgId, message);
+      sentTo.add(ownerTgId);
+    }
+    // Also notify the super admin (avoid double-send if they own it)
+    if (ADMIN_ID && !sentTo.has(ADMIN_ID)) {
+      await sendMessage(ADMIN_ID, `${message}\n\n<i>(forwarded — super admin copy)</i>`);
     }
 
     return new Response(JSON.stringify({ ok: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
