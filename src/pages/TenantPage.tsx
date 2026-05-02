@@ -19,6 +19,7 @@ type Listing = {
   sqft: number | null;
   description: string | null;
   bio: string | null;
+  heading: string | null;
 };
 type Photo = { id: string; url: string; is_hidden: boolean; position: number };
 
