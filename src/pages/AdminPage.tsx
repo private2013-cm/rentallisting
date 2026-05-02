@@ -103,23 +103,42 @@ const AdminPage = () => {
       .on("postgres_changes", { event: "*", schema: "public", table: "listings" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "listing_photos" }, load)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "listing_interests" }, load)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "applications" }, load)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
     // eslint-disable-next-line
   }, [slug]);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center text-muted-foreground font-sans-ui">Loading…</div>;
+  if (forbidden) {
+    return (
+      <main className="min-h-screen bg-secondary/30 flex items-center justify-center px-6 py-12">
+        <Card className="max-w-md w-full p-8 text-center shadow-soft">
+          <h1 className="text-3xl font-semibold text-destructive mb-3">403 · Forbidden</h1>
+          <p className="font-sans-ui text-muted-foreground mb-6">
+            You don't have access to this page. Admin links require the access key sent by the bot.
+          </p>
+          <Button asChild variant="outline" className="font-sans-ui"><Link to="/">Go home</Link></Button>
+        </Card>
+      </main>
+    );
+  }
   if (errorText) {
     return (
       <main className="min-h-screen bg-secondary/30 flex items-center justify-center px-6 py-12">
         <Card className="max-w-lg w-full p-6 text-center shadow-soft">
-          <h1 className="text-2xl font-semibold text-primary mb-3">Admin link needed</h1>
+          <h1 className="text-2xl font-semibold text-primary mb-3">Something went wrong</h1>
           <p className="font-sans-ui text-muted-foreground mb-5">{errorText}</p>
           <Button asChild variant="outline" className="font-sans-ui"><Link to="/">Back home</Link></Button>
         </Card>
       </main>
     );
   }
+
+  const listingNameById = (id: string | null) => {
+    if (!id) return "—";
+    return listings.find((l) => l.id === id)?.address ?? "Listing";
+  };
 
   return (
     <main className="min-h-screen bg-secondary/30">
@@ -148,9 +167,10 @@ const AdminPage = () => {
           <TabsList className="font-sans-ui">
             {isMaster && <TabsTrigger value="groups">Listing groups</TabsTrigger>}
             {!isMaster && <TabsTrigger value="listings">Listings</TabsTrigger>}
-            <TabsTrigger value="settings">Defaults</TabsTrigger>
-            <TabsTrigger value="users"><Users className="w-3.5 h-3.5 mr-1.5" />Users</TabsTrigger>
-            {!isMaster && <TabsTrigger value="ai"><Sparkles className="w-3.5 h-3.5 mr-1.5" />AI assistant</TabsTrigger>}
+            <TabsTrigger value="applications"><Inbox className="w-3.5 h-3.5 mr-1.5" />Applications{applications.length > 0 && <span className="ml-1.5 text-xs bg-accent/30 px-1.5 rounded">{applications.length}</span>}</TabsTrigger>
+            {isMaster && <TabsTrigger value="settings">Defaults</TabsTrigger>}
+            {isMaster && <TabsTrigger value="users"><Users className="w-3.5 h-3.5 mr-1.5" />Users</TabsTrigger>}
+            {isMaster && <TabsTrigger value="ai"><Sparkles className="w-3.5 h-3.5 mr-1.5" />AI assistant</TabsTrigger>}
           </TabsList>
 
           {isMaster && (
