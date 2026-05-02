@@ -527,4 +527,50 @@ function AIAssistant({ context, reload }: { context: any; reload: () => void }) 
   );
 }
 
+function ApplicationsPanel({ applications, listingNameById, isMaster, groups }: {
+  applications: Application[];
+  listingNameById: (id: string | null) => string;
+  isMaster: boolean;
+  groups: Group[];
+}) {
+  const groupSlug = (gid: string | null) => {
+    if (!gid) return "—";
+    return groups.find((g) => g.id === gid)?.slug ?? "—";
+  };
+  return (
+    <Card className="p-6">
+      <h3 className="font-semibold text-lg mb-1">{isMaster ? "All applications" : "Applications for your listings"}</h3>
+      <p className="font-sans-ui text-sm text-muted-foreground mb-4">
+        Each submission is also forwarded to {isMaster ? "you on Telegram" : "your Telegram and the super admin"}.
+      </p>
+      {applications.length === 0 && (
+        <p className="font-sans-ui text-sm text-muted-foreground">No applications yet.</p>
+      )}
+      <div className="space-y-3 font-sans-ui">
+        {applications.map((a) => (
+          <div key={a.id} className="p-4 rounded-md bg-secondary/40 border border-border">
+            <div className="flex flex-wrap justify-between items-start gap-2 mb-2">
+              <div>
+                <p className="font-medium text-sm">🏠 {listingNameById(a.listing_id)}</p>
+                {isMaster && (
+                  <p className="text-xs text-muted-foreground">Group: /{groupSlug(a.link_group_id)}</p>
+                )}
+              </div>
+              <span className="text-xs text-muted-foreground">{new Date(a.created_at).toLocaleString()}</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-sm">
+              {Object.entries(a.data || {}).map(([k, v]) => (
+                <div key={k} className="break-words">
+                  <span className="text-muted-foreground">{k}:</span> <span className="font-medium">{v}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 export default AdminPage;
+
