@@ -1,6 +1,5 @@
-// Admin page — edit listing fields (price, deposit, address, bio, description),
-// hide/show photos, view interest counts, manage bot users, AI assistant chat.
-import { useEffect, useMemo, useState } from "react";
+// Admin page — edit listings, manage photos with pending changes, chat with tenants, broadcast.
+import { useEffect, useMemo, useState, useRef } from "react";
 import { Link, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -9,19 +8,21 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Sparkles, ExternalLink, Eye, EyeOff, Save, Send, Users, Trash2, Heart, X, Inbox } from "lucide-react";
+import { Sparkles, ExternalLink, Eye, EyeOff, Save, Send, Users, Trash2, Heart, X, Inbox, MessageSquare, Megaphone } from "lucide-react";
 import { toast } from "sonner";
 
 type Listing = {
   id: string; address: string | null; price: number | null; deposit: number | null;
   beds: number | null; baths: number | null; sqft: number | null;
-  description: string | null; bio: string | null; source_url: string;
+  description: string | null; bio: string | null; heading: string | null; source_url: string;
   link_group_id?: string;
 };
 type Photo = { id: string; url: string; is_hidden: boolean; position: number };
 type BotUser = { telegram_id: number; username: string | null; first_name: string | null; last_name: string | null; is_allowed: boolean; is_admin: boolean; credits_remaining: number; created_at: string };
 type Group = { id: string; slug: string; title: string | null; created_at: string; listing_count?: number };
 type Application = { id: string; listing_id: string | null; link_group_id: string | null; data: Record<string, string>; created_at: string };
+type ChatMessage = { id: string; tenant_telegram_id: number; sender: "super" | "tenant"; body: string; created_at: string; read_by_super: boolean; read_by_tenant: boolean };
+type ChatThread = { tenant_telegram_id: number; messages: ChatMessage[]; unread: number; user: { telegram_id: number; username: string | null; first_name: string | null; last_name: string | null } | null };
 
 const AdminPage = () => {
   const { slug } = useParams();
@@ -33,6 +34,8 @@ const AdminPage = () => {
   const [users, setUsers] = useState<BotUser[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
   const [interestCounts, setInterestCounts] = useState<Record<string, { yes: number; no: number }>>({});
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatThreads, setChatThreads] = useState<ChatThread[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState("");
   const [forbidden, setForbidden] = useState(false);
@@ -52,16 +55,8 @@ const AdminPage = () => {
   };
 
   const load = async () => {
-    if (!slug && !masterKey) {
-      setLoading(false);
-      setForbidden(true);
-      return;
-    }
-    if (slug && !adminKey) {
-      setLoading(false);
-      setForbidden(true);
-      return;
-    }
+    if (!slug && !masterKey) { setLoading(false); setForbidden(true); return; }
+    if (slug && !adminKey) { setLoading(false); setForbidden(true); return; }
     setLoading(true);
     setErrorText("");
     try {
@@ -77,6 +72,8 @@ const AdminPage = () => {
       setTenantHeading(data.tenantHeading ?? "Private landlord rental listing");
       setUsers(data.users ?? []);
       setApplications(data.applications ?? []);
+      setChatMessages(data.chatMessages ?? []);
+      setChatThreads(data.chatThreads ?? []);
       const ids = new Set(items.map((l: any) => l.id));
       const counts: Record<string, { yes: number; no: number }> = {};
       (data.interests ?? []).forEach((i: any) => {
@@ -87,7 +84,6 @@ const AdminPage = () => {
       setInterestCounts(counts);
     } catch (e: any) {
       const msg = e.message ?? "Could not load admin page";
-      // Bad/missing key responses → forbidden
       if (/invalid|missing/i.test(msg)) setForbidden(true);
       else setErrorText(msg);
     } finally {
@@ -97,13 +93,14 @@ const AdminPage = () => {
 
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [slug]);
 
+  // Realtime — only refresh things that don't disrupt active editing
+  // (NO listing_photos auto-reload — pending photo edits would be lost)
   useEffect(() => {
     const ch = supabase
       .channel(`admin:${slug ?? "master"}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "listings" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "listing_photos" }, load)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "listing_interests" }, load)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "applications" }, load)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "admin_chat_messages" }, load)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
     // eslint-disable-next-line
@@ -140,6 +137,10 @@ const AdminPage = () => {
     return listings.find((l) => l.id === id)?.address ?? "Listing";
   };
 
+  const totalChatUnread = isMaster
+    ? chatThreads.reduce((s, t) => s + (t.unread ?? 0), 0)
+    : chatMessages.filter(m => m.sender === "super" && !m.read_by_tenant).length;
+
   return (
     <main className="min-h-screen bg-secondary/30">
       <header className="bg-primary text-primary-foreground py-6 px-6 shadow-soft">
@@ -164,10 +165,12 @@ const AdminPage = () => {
 
       <div className="max-w-6xl mx-auto px-6 py-8">
         <Tabs defaultValue={isMaster ? "groups" : "listings"}>
-          <TabsList className="font-sans-ui">
+          <TabsList className="font-sans-ui flex-wrap h-auto">
             {isMaster && <TabsTrigger value="groups">Listing groups</TabsTrigger>}
             {!isMaster && <TabsTrigger value="listings">Listings</TabsTrigger>}
             <TabsTrigger value="applications"><Inbox className="w-3.5 h-3.5 mr-1.5" />Applications{applications.length > 0 && <span className="ml-1.5 text-xs bg-accent/30 px-1.5 rounded">{applications.length}</span>}</TabsTrigger>
+            <TabsTrigger value="chat"><MessageSquare className="w-3.5 h-3.5 mr-1.5" />Chat{totalChatUnread > 0 && <span className="ml-1.5 text-xs bg-destructive text-destructive-foreground px-1.5 rounded-full">{totalChatUnread}</span>}</TabsTrigger>
+            {isMaster && <TabsTrigger value="broadcast"><Megaphone className="w-3.5 h-3.5 mr-1.5" />Broadcast</TabsTrigger>}
             {isMaster && <TabsTrigger value="settings">Defaults</TabsTrigger>}
             {isMaster && <TabsTrigger value="users"><Users className="w-3.5 h-3.5 mr-1.5" />Users</TabsTrigger>}
             {isMaster && <TabsTrigger value="ai"><Sparkles className="w-3.5 h-3.5 mr-1.5" />AI assistant</TabsTrigger>}
@@ -213,21 +216,35 @@ const AdminPage = () => {
             <ApplicationsPanel applications={applications} listingNameById={listingNameById} isMaster={isMaster} groups={groups} />
           </TabsContent>
 
+          <TabsContent value="chat" className="mt-6">
+            {isMaster ? (
+              <SuperChatPanel threads={chatThreads} adminAction={adminAction} reload={load} />
+            ) : (
+              <TenantChatPanel messages={chatMessages} adminAction={adminAction} reload={load} />
+            )}
+          </TabsContent>
+
+          {isMaster && (
+            <TabsContent value="broadcast" className="mt-6">
+              <BroadcastPanel adminAction={adminAction} userCount={users.length} />
+            </TabsContent>
+          )}
+
           {isMaster && (
             <TabsContent value="settings" className="mt-6 space-y-6">
               <Card className="p-6 max-w-2xl">
-                <h3 className="font-semibold text-lg mb-1">Tenant page heading</h3>
-                <p className="font-sans-ui text-sm text-muted-foreground mb-4">The small uppercase line shown above the listing count on every tenant page.</p>
+                <h3 className="font-semibold text-lg mb-1">Default tenant page heading</h3>
+                <p className="font-sans-ui text-sm text-muted-foreground mb-4">Used when a listing has no custom heading. Each listing can override this in the Listings tab.</p>
                 <Input value={tenantHeading} onChange={(e) => setTenantHeading(e.target.value)} className="font-sans-ui" />
                 <Button
                   className="mt-4 bg-primary hover:bg-primary/90"
                   onClick={async () => {
                     try {
                       await adminAction("update_setting", { setting_key: "tenant_heading", value: tenantHeading });
-                      toast.success("Heading saved");
+                      toast.success("Default heading saved");
                     } catch (e: any) { toast.error(e.message); }
                   }}
-                ><Save className="w-4 h-4 mr-2" />Save heading</Button>
+                ><Save className="w-4 h-4 mr-2" />Save default heading</Button>
               </Card>
 
               <Card className="p-6 max-w-2xl">
@@ -267,54 +284,79 @@ const AdminPage = () => {
 function ListingEditor({ listing, interest, tenantUrl, adminAction, reload }: { listing: Listing & { photos: Photo[] }; interest: { yes: number; no: number }; tenantUrl: string; adminAction: (action: string, body?: Record<string, unknown>) => Promise<any>; reload: () => void }) {
   const [form, setForm] = useState({
     address: listing.address ?? "",
+    heading: listing.heading ?? "",
     price: listing.price ?? "",
     deposit: listing.deposit ?? "",
     beds: listing.beds ?? "",
     baths: listing.baths ?? "",
+    sqft: listing.sqft ?? "",
     bio: listing.bio ?? "",
     description: listing.description ?? "",
   });
   const [saving, setSaving] = useState(false);
   const [photoUrl, setPhotoUrl] = useState("");
+  // Pending photo changes — applied only on Save
+  const [pendingHidden, setPendingHidden] = useState<Record<string, boolean>>({}); // photo_id -> new is_hidden
+  const [pendingDelete, setPendingDelete] = useState<Set<string>>(new Set()); // photo_ids to delete
 
   useEffect(() => {
     setForm({
       address: listing.address ?? "",
+      heading: listing.heading ?? "",
       price: listing.price ?? "",
       deposit: listing.deposit ?? "",
       beds: listing.beds ?? "",
       baths: listing.baths ?? "",
+      sqft: listing.sqft ?? "",
       bio: listing.bio ?? "",
       description: listing.description ?? "",
     });
+    setPendingHidden({});
+    setPendingDelete(new Set());
   }, [listing.id]);
+
+  const dirty = pendingDelete.size > 0 || Object.keys(pendingHidden).length > 0;
 
   const save = async () => {
     setSaving(true);
     try {
       await adminAction("update_listing", { listing_id: listing.id, values: {
         address: form.address || null,
+        heading: form.heading || null,
         price: form.price === "" ? null : Number(form.price),
         deposit: form.deposit === "" ? null : Number(form.deposit),
         beds: form.beds === "" ? null : Number(form.beds),
         baths: form.baths === "" ? null : Number(form.baths),
+        sqft: form.sqft === "" ? null : Math.round(Number(form.sqft)),
         bio: form.bio || null,
         description: form.description || null,
       } });
+      // Apply pending photo edits
+      for (const [pid, hidden] of Object.entries(pendingHidden)) {
+        if (pendingDelete.has(pid)) continue;
+        await adminAction("toggle_photo", { photo_id: pid, is_hidden: hidden });
+      }
+      for (const pid of pendingDelete) {
+        await adminAction("delete_photo", { photo_id: pid });
+      }
       toast.success("Listing updated — tenant page is live");
       reload();
     } catch (e: any) { toast.error(e.message); }
     setSaving(false);
   };
 
-  const togglePhoto = async (p: Photo) => {
-    await adminAction("toggle_photo", { photo_id: p.id, is_hidden: !p.is_hidden });
-    reload();
+  const togglePhotoLocal = (p: Photo) => {
+    setPendingHidden(prev => {
+      const current = pendingHidden[p.id] ?? p.is_hidden;
+      return { ...prev, [p.id]: !current };
+    });
   };
-  const deletePhoto = async (p: Photo) => {
-    if (!confirm("Delete this photo permanently?")) return;
-    await adminAction("delete_photo", { photo_id: p.id });
-    reload();
+  const deletePhotoLocal = (p: Photo) => {
+    setPendingDelete(prev => {
+      const next = new Set(prev);
+      if (next.has(p.id)) next.delete(p.id); else next.add(p.id);
+      return next;
+    });
   };
   const deleteListing = async () => {
     if (!confirm("Delete this entire listing?")) return;
@@ -331,6 +373,12 @@ function ListingEditor({ listing, interest, tenantUrl, adminAction, reload }: { 
       reload();
     } catch (e: any) { toast.error(e.message); }
   };
+
+  const visibleCount = listing.photos.filter(p => {
+    if (pendingDelete.has(p.id)) return false;
+    const h = pendingHidden[p.id] ?? p.is_hidden;
+    return !h;
+  }).length;
 
   return (
     <Card className="p-6 shadow-soft">
@@ -350,6 +398,10 @@ function ListingEditor({ listing, interest, tenantUrl, adminAction, reload }: { 
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-sans-ui">
         <div className="md:col-span-2">
+          <Label>Page heading <span className="text-xs text-muted-foreground">(small line above the listing — leave blank to use default)</span></Label>
+          <Input value={form.heading} onChange={(e) => setForm({ ...form, heading: e.target.value })} placeholder="e.g. Cozy 2-bed in Brooklyn" />
+        </div>
+        <div className="md:col-span-2">
           <Label>Address</Label>
           <Input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
         </div>
@@ -357,6 +409,7 @@ function ListingEditor({ listing, interest, tenantUrl, adminAction, reload }: { 
         <div><Label>Deposit ($)</Label><Input type="number" value={form.deposit} onChange={(e) => setForm({ ...form, deposit: e.target.value })} /></div>
         <div><Label>Beds</Label><Input type="number" value={form.beds} onChange={(e) => setForm({ ...form, beds: e.target.value })} /></div>
         <div><Label>Baths</Label><Input type="number" step="0.5" value={form.baths} onChange={(e) => setForm({ ...form, baths: e.target.value })} /></div>
+        <div className="md:col-span-2"><Label>Square feet</Label><Input type="number" value={form.sqft} onChange={(e) => setForm({ ...form, sqft: e.target.value })} placeholder="Leave blank to hide" /></div>
         <div className="md:col-span-2">
           <Label>Bio (shown in green box on tenant page)</Label>
           <Textarea rows={3} value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} />
@@ -367,35 +420,44 @@ function ListingEditor({ listing, interest, tenantUrl, adminAction, reload }: { 
         </div>
       </div>
 
-      <div className="flex gap-3 mt-5">
+      <div className="flex gap-3 mt-5 items-center">
         <Button onClick={save} disabled={saving} className="bg-primary hover:bg-primary/90"><Save className="w-4 h-4 mr-2" />{saving ? "Saving…" : "Save"}</Button>
         <Button asChild variant="outline">
           <a href={tenantUrl} target="_blank" rel="noopener noreferrer"><Eye className="w-4 h-4 mr-2" />View tenant page</a>
         </Button>
+        {dirty && <span className="text-xs text-accent font-sans-ui">● Unsaved photo changes</span>}
       </div>
 
       <div className="mt-6">
-        <p className="font-sans-ui text-sm font-medium mb-2">Photos ({listing.photos.length} total · {listing.photos.filter(p => !p.is_hidden).length} visible)</p>
+        <p className="font-sans-ui text-sm font-medium mb-2">Photos ({listing.photos.length} total · {visibleCount} will be visible after save)</p>
         <div className="flex flex-col sm:flex-row gap-2 mb-3 font-sans-ui">
           <Input value={photoUrl} onChange={(e) => setPhotoUrl(e.target.value)} placeholder="Paste image URL to add a photo" />
           <Button onClick={addPhoto} disabled={!photoUrl.trim()} variant="outline">Add photo</Button>
         </div>
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
-          {listing.photos.map(p => (
-            <div key={p.id} className={`relative aspect-square rounded-md overflow-hidden border-2 ${p.is_hidden ? "border-destructive opacity-50" : "border-border"}`}>
-              <img src={p.url} alt="" className="w-full h-full object-cover" loading="lazy" />
-              <div className="absolute inset-0 flex items-end justify-between p-1 bg-gradient-to-t from-black/70 via-transparent opacity-0 hover:opacity-100 transition">
-                <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" onClick={() => togglePhoto(p)}>
-                  {p.is_hidden ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-                </Button>
-                <Button size="sm" variant="destructive" className="h-7 px-2 text-xs" onClick={() => deletePhoto(p)}>
-                  <Trash2 className="w-3 h-3" />
-                </Button>
+          {listing.photos.map(p => {
+            const willHide = pendingHidden[p.id] ?? p.is_hidden;
+            const willDelete = pendingDelete.has(p.id);
+            return (
+              <div key={p.id} className={`relative aspect-square rounded-md overflow-hidden border-2 ${willDelete ? "border-destructive opacity-30" : willHide ? "border-destructive opacity-50" : "border-border"}`}>
+                <img src={p.url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                <div className="absolute inset-0 flex items-end justify-between p-1 bg-gradient-to-t from-black/70 via-transparent opacity-0 hover:opacity-100 transition">
+                  <Button size="sm" variant="secondary" className="h-7 px-2 text-xs" onClick={() => togglePhotoLocal(p)} disabled={willDelete}>
+                    {willHide ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                  </Button>
+                  <Button size="sm" variant={willDelete ? "secondary" : "destructive"} className="h-7 px-2 text-xs" onClick={() => deletePhotoLocal(p)}>
+                    <Trash2 className="w-3 h-3" />
+                  </Button>
+                </div>
+                {willDelete && <span className="absolute top-1 left-1 bg-destructive text-destructive-foreground text-[10px] px-1.5 py-0.5 rounded font-sans-ui">DELETE</span>}
+                {!willDelete && willHide && <span className="absolute top-1 left-1 bg-destructive text-destructive-foreground text-[10px] px-1.5 py-0.5 rounded font-sans-ui">HIDE</span>}
               </div>
-              {p.is_hidden && <span className="absolute top-1 left-1 bg-destructive text-destructive-foreground text-[10px] px-1.5 py-0.5 rounded font-sans-ui">HIDDEN</span>}
-            </div>
-          ))}
+            );
+          })}
         </div>
+        {dirty && (
+          <p className="font-sans-ui text-xs text-muted-foreground mt-3">Photo changes are pending — click <b>Save</b> above to apply them.</p>
+        )}
       </div>
     </Card>
   );
@@ -500,7 +562,6 @@ function AIAssistant({ context, reload }: { context: any; reload: () => void }) 
       <h3 className="font-semibold text-lg mb-1 flex items-center gap-2"><Sparkles className="w-4 h-4 text-accent" />AI assistant</h3>
       <p className="font-sans-ui text-sm text-muted-foreground mb-4">
         Edits content live: prices, deposits, bios, photo visibility, default bio, button URL.
-        For bigger changes (new buttons, new flows, design overhauls), tell me in Lovable chat.
       </p>
       <div className="space-y-3 max-h-96 overflow-y-auto mb-4 pr-2 font-sans-ui">
         {messages.map((m, i) => (
@@ -572,5 +633,153 @@ function ApplicationsPanel({ applications, listingNameById, isMaster, groups }: 
   );
 }
 
-export default AdminPage;
+function SuperChatPanel({ threads, adminAction, reload }: { threads: ChatThread[]; adminAction: (a: string, b?: Record<string, unknown>) => Promise<any>; reload: () => void }) {
+  const [active, setActive] = useState<number | null>(threads[0]?.tenant_telegram_id ?? null);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
+  const activeThread = threads.find(t => t.tenant_telegram_id === active) ?? null;
+
+  useEffect(() => {
+    if (active && activeThread?.unread) {
+      adminAction("mark_chat_read", { tenant_telegram_id: active }).catch(() => {});
+    }
+    // eslint-disable-next-line
+  }, [active]);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, [activeThread?.messages.length]);
+
+  const send = async () => {
+    if (!input.trim() || !active || sending) return;
+    setSending(true);
+    try {
+      await adminAction("send_chat", { tenant_telegram_id: active, body: input.trim() });
+      setInput("");
+      reload();
+    } catch (e: any) { toast.error(e.message); }
+    setSending(false);
+  };
+
+  return (
+    <Card className="p-0 overflow-hidden">
+      <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] min-h-[500px]">
+        <aside className="border-r border-border bg-secondary/30 max-h-[600px] overflow-y-auto">
+          <div className="p-4 border-b border-border">
+            <h3 className="font-semibold flex items-center gap-2"><MessageSquare className="w-4 h-4" />Tenant chats</h3>
+            <p className="text-xs text-muted-foreground font-sans-ui mt-1">{threads.length} thread(s)</p>
+          </div>
+          <div className="font-sans-ui text-sm">
+            {threads.map(t => {
+              const name = [t.user?.first_name, t.user?.last_name].filter(Boolean).join(" ") || t.user?.username || `id ${t.tenant_telegram_id}`;
+              const last = t.messages[t.messages.length - 1];
+              return (
+                <button key={t.tenant_telegram_id} onClick={() => setActive(t.tenant_telegram_id)} className={`w-full text-left p-3 border-b border-border/60 hover:bg-secondary/60 transition ${active === t.tenant_telegram_id ? "bg-secondary/80" : ""}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium truncate">{name}</span>
+                    {t.unread > 0 && <span className="text-xs bg-destructive text-destructive-foreground rounded-full px-1.5 min-w-[18px] text-center">{t.unread}</span>}
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate mt-0.5">{last?.body ?? "—"}</p>
+                </button>
+              );
+            })}
+            {threads.length === 0 && <p className="p-4 text-muted-foreground text-xs">No chats yet. Tenants can start one from the bot ("💬 Message admin") or their admin page.</p>}
+          </div>
+        </aside>
+        <section className="flex flex-col max-h-[600px]">
+          {activeThread ? (
+            <>
+              <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3 font-sans-ui">
+                {activeThread.messages.map(m => (
+                  <div key={m.id} className={`max-w-[80%] p-3 rounded-lg text-sm ${m.sender === "super" ? "ml-auto bg-primary text-primary-foreground" : "bg-secondary"}`}>
+                    <p className="whitespace-pre-wrap break-words">{m.body}</p>
+                    <p className="text-[10px] opacity-70 mt-1">{new Date(m.created_at).toLocaleString()}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="p-3 border-t border-border flex gap-2">
+                <Input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} placeholder="Type a message…" className="font-sans-ui" disabled={sending} />
+                <Button onClick={send} disabled={sending || !input.trim()}><Send className="w-4 h-4" /></Button>
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-muted-foreground font-sans-ui text-sm">Pick a tenant to chat with.</div>
+          )}
+        </section>
+      </div>
+    </Card>
+  );
+}
+
+function TenantChatPanel({ messages, adminAction, reload }: { messages: ChatMessage[]; adminAction: (a: string, b?: Record<string, unknown>) => Promise<any>; reload: () => void }) {
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }); }, [messages.length]);
+
+  const send = async () => {
+    if (!input.trim() || sending) return;
+    setSending(true);
+    try {
+      await adminAction("send_chat", { body: input.trim() });
+      setInput("");
+      reload();
+    } catch (e: any) { toast.error(e.message); }
+    setSending(false);
+  };
+
+  return (
+    <Card className="p-0 overflow-hidden flex flex-col max-h-[600px]">
+      <div className="p-4 border-b border-border">
+        <h3 className="font-semibold flex items-center gap-2"><MessageSquare className="w-4 h-4" />Chat with admin</h3>
+        <p className="text-xs text-muted-foreground font-sans-ui mt-1">Messages also arrive in your Telegram bot.</p>
+      </div>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3 font-sans-ui min-h-[300px]">
+        {messages.length === 0 && <p className="text-sm text-muted-foreground text-center mt-12">No messages yet. Say hi 👋</p>}
+        {messages.map(m => (
+          <div key={m.id} className={`max-w-[80%] p-3 rounded-lg text-sm ${m.sender === "tenant" ? "ml-auto bg-primary text-primary-foreground" : "bg-secondary"}`}>
+            <p className="whitespace-pre-wrap break-words">{m.body}</p>
+            <p className="text-[10px] opacity-70 mt-1">{new Date(m.created_at).toLocaleString()}</p>
+          </div>
+        ))}
+      </div>
+      <div className="p-3 border-t border-border flex gap-2">
+        <Input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }} placeholder="Type a message to the admin…" className="font-sans-ui" disabled={sending} />
+        <Button onClick={send} disabled={sending || !input.trim()}><Send className="w-4 h-4" /></Button>
+      </div>
+    </Card>
+  );
+}
+
+function BroadcastPanel({ adminAction, userCount }: { adminAction: (a: string, b?: Record<string, unknown>) => Promise<any>; userCount: number }) {
+  const [body, setBody] = useState("");
+  const [sending, setSending] = useState(false);
+  const send = async () => {
+    if (!body.trim()) return;
+    if (!confirm(`Send this to all ${userCount} bot user(s)?`)) return;
+    setSending(true);
+    try {
+      const res = await adminAction("broadcast", { body: body.trim() });
+      toast.success(`Broadcast sent — ✅ ${res.sent} · ❌ ${res.failed}`);
+      setBody("");
+    } catch (e: any) { toast.error(e.message); }
+    setSending(false);
+  };
+  return (
+    <Card className="p-6 max-w-2xl">
+      <h3 className="font-semibold text-lg mb-1 flex items-center gap-2"><Megaphone className="w-4 h-4 text-accent" />Broadcast to all users</h3>
+      <p className="font-sans-ui text-sm text-muted-foreground mb-4">
+        Sends a Telegram message to <b>every</b> bot user ({userCount} total). Supports HTML formatting (e.g. <code>&lt;b&gt;bold&lt;/b&gt;</code>).
+      </p>
+      <Textarea rows={6} value={body} onChange={(e) => setBody(e.target.value)} className="font-sans-ui" placeholder="Hey everyone — new feature: …" />
+      <Button onClick={send} disabled={sending || !body.trim()} className="mt-4 bg-primary hover:bg-primary/90">
+        <Send className="w-4 h-4 mr-2" />{sending ? "Sending…" : `Send to ${userCount} user(s)`}
+      </Button>
+    </Card>
+  );
+}
+
+export default AdminPage;
