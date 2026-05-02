@@ -157,6 +157,11 @@ function ListingCard({ listing, fallbackHeading, showHeading }: { listing: Listi
 
       <div className="p-6 sm:p-8 space-y-5">
         <div>
+          {showHeading && (
+            <p className="font-sans-ui uppercase tracking-widest text-xs text-muted-foreground mb-2">
+              {listing.heading ?? fallbackHeading}
+            </p>
+          )}
           <h2 className="text-2xl sm:text-3xl font-semibold text-primary leading-tight">
             {listing.address ?? "Address pending"}
           </h2>
