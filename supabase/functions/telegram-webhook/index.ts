@@ -207,6 +207,44 @@ async function finishGroup(chatId: number, groupId: string, base: string) {
   await clearState(chatId);
 }
 
+async function showListingPicker(chatId: number, ownerId: number) {
+  // Find groups owned by this user, list their listings
+  const { data: groups } = await supabase.from("link_groups").select("id, slug").eq("owner_telegram_id", ownerId);
+  const gids = (groups ?? []).map(g => g.id);
+  if (!gids.length) { await sendMessage(chatId, "You don't have any listings yet. Tap 🏠 New listing link to create one."); return; }
+  const { data: listings } = await supabase.from("listings").select("id, address, price, link_group_id").in("link_group_id", gids).order("created_at", { ascending: false }).limit(30);
+  if (!listings?.length) { await sendMessage(chatId, "You don't have any listings yet."); return; }
+  const slugById = new Map((groups ?? []).map(g => [g.id, g.slug]));
+  const buttons = listings.map(l => [{
+    text: `${l.address ? l.address.slice(0,40) : "Untitled"} ${l.price ? `· $${l.price}` : ""} · /${slugById.get(l.link_group_id) ?? ""}`,
+    callback_data: `editpick:${l.id}`,
+  }]);
+  await sendMessage(chatId, "📝 <b>Pick a listing to edit:</b>", { reply_markup: { inline_keyboard: buttons } });
+}
+
+async function showFieldMenu(chatId: number, listingId: string) {
+  const { data: l } = await supabase.from("listings").select("*").eq("id", listingId).maybeSingle();
+  if (!l) { await sendMessage(chatId, "Listing not found."); return; }
+  const fmt = (v: any) => (v === null || v === undefined || v === "") ? "—" : String(v);
+  const summary =
+    `<b>${l.address ?? "Untitled"}</b>\n` +
+    `Heading: ${fmt(l.heading)}\n` +
+    `Price: $${fmt(l.price)} · Deposit: $${fmt(l.deposit)}\n` +
+    `Beds: ${fmt(l.beds)} · Sqft: ${fmt(l.sqft)}\n` +
+    `Bio: ${l.bio ? l.bio.slice(0,80) : "—"}\n`;
+  await sendMessage(chatId, `${summary}\n<b>Pick a field to edit:</b>`, {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "💰 Price", callback_data: `editfld:${listingId}:price` }, { text: "💵 Deposit", callback_data: `editfld:${listingId}:deposit` }],
+        [{ text: "🛏 Beds", callback_data: `editfld:${listingId}:beds` }, { text: "📐 Sqft", callback_data: `editfld:${listingId}:sqft` }],
+        [{ text: "📍 Address", callback_data: `editfld:${listingId}:address` }, { text: "🏷 Heading", callback_data: `editfld:${listingId}:heading` }],
+        [{ text: "📝 Bio", callback_data: `editfld:${listingId}:bio` }, { text: "📄 Description", callback_data: `editfld:${listingId}:description` }],
+        [{ text: "⬅️ Back to listings", callback_data: "editback" }],
+      ],
+    },
+  });
+}
+
 async function handleUpdate(update: any, req: Request) {
   // Callback queries (inline buttons)
   if (update.callback_query) {
