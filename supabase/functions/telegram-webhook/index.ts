@@ -268,6 +268,24 @@ async function handleUpdate(update: any, req: Request) {
       await finishGroup(chatId, groupId, base);
       return;
     }
+
+    // Edit-listing flow
+    if (data.startsWith("editpick:")) {
+      const lid = data.split(":")[1];
+      await showFieldMenu(chatId, lid);
+      return;
+    }
+    if (data.startsWith("editfld:")) {
+      const [, lid, field] = data.split(":");
+      const labels: Record<string,string> = { price:"price ($)", deposit:"deposit ($)", beds:"beds", sqft:"square feet", bio:"bio", description:"description", heading:"page heading", address:"address" };
+      await setState(stateId, "awaiting_field_value", { listing_id: lid, field });
+      await sendMessage(chatId, `✏️ Send the new <b>${labels[field] ?? field}</b>. Send <code>-</code> to clear it. Send /cancel to abort.`);
+      return;
+    }
+    if (data === "editback") {
+      await showListingPicker(chatId, fromId);
+      return;
+    }
     return;
   }
 
