@@ -8,6 +8,7 @@ import NotFound from "./pages/NotFound.tsx";
 import TenantPage from "./pages/TenantPage.tsx";
 import AdminPage from "./pages/AdminPage.tsx";
 import ApplyPage from "./pages/ApplyPage.tsx";
+import Forbidden from "./pages/Forbidden.tsx";
 
 const queryClient = new QueryClient();
 
@@ -19,6 +20,7 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
+          <Route path="/l" element={<Forbidden />} />
           <Route path="/l/:slug" element={<TenantPage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/admin/:slug" element={<AdminPage />} />
