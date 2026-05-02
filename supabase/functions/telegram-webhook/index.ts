@@ -385,6 +385,7 @@ async function handleUpdate(update: any, req: Request) {
       },
       { text: `+10 🪙`, callback_data: `addcred:${u.telegram_id}:10` },
       { text: `+100 🪙`, callback_data: `addcred:${u.telegram_id}:100` },
+      { text: `✏️ Custom`, callback_data: `addcred:${u.telegram_id}:custom` },
     ]);
     await sendMessage(chatId, `<b>Recent users:</b>\n\n${lines.join("\n")}\n\nReply <code>/setcredits TG_ID NUMBER</code> to set an exact balance.`, { reply_markup: { inline_keyboard: keyboard } });
     return;
