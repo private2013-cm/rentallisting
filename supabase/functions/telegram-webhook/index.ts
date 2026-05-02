@@ -306,11 +306,20 @@ async function handleUpdate(update: any, req: Request) {
       await sendMessage(chatId, "🔒 Only Telegram group admins can start and manage listing links in this group.");
       return;
     }
+    const handle = user.username ? `@${user.username}` : (user.first_name || `id ${user.telegram_id}`);
     if (!user.is_allowed) {
-      await sendMessage(chatId, "👋 Welcome! Your access is pending admin approval. You'll be notified when approved.");
+      await sendMessage(chatId, `👋 Welcome <b>${handle}</b>!\n\nYour access is pending admin approval. You'll be notified when approved.`);
       await notifyAdminPendingApproval(user);
       return;
     }
+    const creditLine = user.is_admin
+      ? "🪙 Credits: <b>unlimited</b> (admin)"
+      : `🪙 Credits remaining: <b>${user.credits_remaining ?? 0}</b>`;
+    await sendMessage(
+      chatId,
+      `👋 Welcome <b>${handle}</b>!\n${creditLine}\n\nTap 🏠 <b>New listing link</b> below or paste a Zillow URL to begin.`,
+      { reply_markup: kbFor(user) }
+    );
     await startNewGroup();
     return;
   }
