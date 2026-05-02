@@ -136,9 +136,16 @@ Deno.serve(async (req) => {
       const g = requireGroup();
       assertOk(await supabase.from("listings").delete().eq("id", body.listing_id).eq("link_group_id", g.id), "Delete listing failed");
     }
-    else if (action === "update_setting") assertOk(await supabase.from("app_settings").upsert({ key: body.setting_key, value: body.value, updated_at: new Date().toISOString() }), "Update setting failed");
-    else if (action === "toggle_user") assertOk(await supabase.from("bot_users").update({ is_allowed: body.is_allowed }).eq("telegram_id", body.telegram_id).eq("is_admin", false), "Update user failed");
+    else if (action === "update_setting") {
+      if (!auth.isMaster) throw new Error("Only the super admin can change global defaults.");
+      assertOk(await supabase.from("app_settings").upsert({ key: body.setting_key, value: body.value, updated_at: new Date().toISOString() }), "Update setting failed");
+    }
+    else if (action === "toggle_user") {
+      if (!auth.isMaster) throw new Error("Only the super admin can approve or deny users.");
+      assertOk(await supabase.from("bot_users").update({ is_allowed: body.is_allowed }).eq("telegram_id", body.telegram_id).eq("is_admin", false), "Update user failed");
+    }
     else if (action === "set_credits") {
+      if (!auth.isMaster) throw new Error("Only the super admin can change credits.");
       const credits = Math.max(0, Math.floor(Number(body.credits ?? 0)));
       assertOk(await supabase.from("bot_users").update({ credits_remaining: credits }).eq("telegram_id", body.telegram_id).eq("is_admin", false), "Set credits failed");
     }
