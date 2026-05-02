@@ -93,7 +93,7 @@ const TenantPage = () => {
   );
 };
 
-function ListingCard({ listing }: { listing: Listing & { photos: Photo[] } }) {
+function ListingCard({ listing, fallbackHeading, showHeading }: { listing: Listing & { photos: Photo[] }; fallbackHeading: string; showHeading: boolean }) {
   const [active, setActive] = useState(0);
   const [interestSent, setInterestSent] = useState<null | boolean>(null);
   const [dialog, setDialog] = useState<null | "apply" | "tour">(null);
