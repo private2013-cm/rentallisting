@@ -431,7 +431,44 @@ async function handleUpdate(update: any, req: Request) {
     return;
   }
 
-  // /users (admin only)
+  // /edit — show listing picker
+  if (text.startsWith("/edit")) {
+    if (!user.is_allowed) { await sendMessage(chatId, "⏳ Waiting for admin approval."); return; }
+    await showListingPicker(chatId, fromId);
+    return;
+  }
+
+  // /chat — tenant opens chat with super admin
+  if (text.startsWith("/chat") && !user.is_admin) {
+    if (!user.is_allowed) { await sendMessage(chatId, "⏳ Waiting for admin approval."); return; }
+    await setState(stateId, "chatting_admin", {});
+    await sendMessage(chatId, "💬 You're now chatting with the admin. Just type your message. Send /cancel to stop.");
+    return;
+  }
+
+  // /broadcast — super admin only
+  if (text.startsWith("/broadcast") && user.is_admin) {
+    await setState(ADMIN_ID, "awaiting_broadcast", {});
+    await sendMessage(chatId, "📣 Send the broadcast text. It will go to <b>all bot users</b>. Send /cancel to abort.");
+    return;
+  }
+
+  // /reply <tg_id> — super admin replies to a tenant
+  if (text.startsWith("/reply") && user.is_admin) {
+    const m = text.match(/^\/reply\s+(\d+)/);
+    if (!m) { await sendMessage(chatId, "Usage: /reply 123456789"); return; }
+    const targetId = Number(m[1]);
+    await setState(ADMIN_ID, "replying_to_tenant", { target_id: targetId });
+    await sendMessage(chatId, `💬 Now type your reply to <code>${targetId}</code>. Send /cancel to abort.`);
+    return;
+  }
+
+  // /cancel — clear any active state
+  if (text.startsWith("/cancel")) {
+    await clearState(stateId);
+    await sendMessage(chatId, "Cancelled.", { reply_markup: kbFor(user) });
+    return;
+  }
   if (text.startsWith("/users") && user.is_admin) {
     const { data: users } = await supabase.from("bot_users").select("*").order("created_at", { ascending: false }).limit(20);
     const lines = (users ?? []).map(u => {
