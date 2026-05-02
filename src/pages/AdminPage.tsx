@@ -31,9 +31,11 @@ const AdminPage = () => {
   const [defaultBio, setDefaultBio] = useState("");
   const [tenantHeading, setTenantHeading] = useState("Private landlord rental listing");
   const [users, setUsers] = useState<BotUser[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
   const [interestCounts, setInterestCounts] = useState<Record<string, { yes: number; no: number }>>({});
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState("");
+  const [forbidden, setForbidden] = useState(false);
   const params = new URLSearchParams(window.location.search);
   const adminKey = params.get("key") ?? "";
   const masterKey = params.get("master") ?? "";
