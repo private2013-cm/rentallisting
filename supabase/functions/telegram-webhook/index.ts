@@ -338,7 +338,7 @@ async function handleUpdate(update: any, req: Request) {
       "Add multiple listings to the same shareable link before tapping <i>Finish</i>.",
     ];
     if (user.is_admin) {
-      lines.push("", "<b>Admin</b>", "👥 Users — approve / deny / set credits", "🛡 Master admin — full dashboard link");
+      lines.push("", "<b>Admin</b>", "👥 Users — approve / deny / set credits", "🛡 Master admin — full dashboard link", "<code>/addcredits TG_ID 25</code> — add credits (negative subtracts)", "<code>/setcredits TG_ID 100</code> — set exact balance");
     }
     await sendMessage(chatId, lines.join("\n"), { reply_markup: kbFor(user) });
     return;
