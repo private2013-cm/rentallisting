@@ -287,6 +287,9 @@ async function handleUpdate(update: any, req: Request) {
     "❓ Help": "/help",
     "👥 Users": "/users",
     "🛡 Master admin": "/master",
+    "📝 Edit my listings": "/edit",
+    "💬 Message admin": "/chat",
+    "📣 Broadcast": "/broadcast",
   };
   if (labelMap[text]) text = labelMap[text];
 
