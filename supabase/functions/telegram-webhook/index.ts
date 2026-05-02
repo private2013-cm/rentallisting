@@ -324,6 +324,12 @@ async function handleUpdate(update: any, req: Request) {
       await showListingPicker(chatId, fromId);
       return;
     }
+    if (fromId === ADMIN_ID && data.startsWith("chatreply:")) {
+      const targetId = Number(data.split(":")[1]);
+      await setState(ADMIN_ID, "replying_to_tenant", { target_id: targetId });
+      await sendMessage(chatId, `💬 Type your reply to <code>${targetId}</code>. /cancel to abort.`);
+      return;
+    }
     return;
   }
 
