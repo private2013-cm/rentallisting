@@ -229,10 +229,15 @@ async function handleUpdate(update: any, req: Request) {
     if (fromId === ADMIN_ID && data.startsWith("addcred:")) {
       const [, idStr, amtStr] = data.split(":");
       const targetId = Number(idStr);
+      if (amtStr === "custom") {
+        await setState(ADMIN_ID, "awaiting_custom_credits", { target_id: targetId });
+        await sendMessage(ADMIN_ID, `✏️ Send the credit amount to ADD to <code>${targetId}</code> (e.g. <code>25</code>, or negative like <code>-10</code> to subtract).`);
+        return;
+      }
       const amt = Number(amtStr);
       const { data: row } = await supabase.from("bot_users").select("credits_remaining,is_admin").eq("telegram_id", targetId).maybeSingle();
       if (!row || row.is_admin) { await sendMessage(ADMIN_ID, "Cannot adjust this user."); return; }
-      const next = (row.credits_remaining ?? 0) + amt;
+      const next = Math.max(0, (row.credits_remaining ?? 0) + amt);
       await supabase.from("bot_users").update({ credits_remaining: next }).eq("telegram_id", targetId);
       await sendMessage(ADMIN_ID, `🪙 <code>${targetId}</code> → ${next} credits`);
       return;
