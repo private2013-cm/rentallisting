@@ -209,43 +209,51 @@ const AdminPage = () => {
             </TabsContent>
           )}
 
-          <TabsContent value="settings" className="mt-6 space-y-6">
-            <Card className="p-6 max-w-2xl">
-              <h3 className="font-semibold text-lg mb-1">Tenant page heading</h3>
-              <p className="font-sans-ui text-sm text-muted-foreground mb-4">The small uppercase line shown above the listing count on every tenant page.</p>
-              <Input value={tenantHeading} onChange={(e) => setTenantHeading(e.target.value)} className="font-sans-ui" />
-              <Button
-                className="mt-4 bg-primary hover:bg-primary/90"
-                onClick={async () => {
-                  try {
-                    await adminAction("update_setting", { setting_key: "tenant_heading", value: tenantHeading });
-                    toast.success("Heading saved");
-                  } catch (e: any) { toast.error(e.message); }
-                }}
-              ><Save className="w-4 h-4 mr-2" />Save heading</Button>
-            </Card>
-
-            <Card className="p-6 max-w-2xl">
-              <h3 className="font-semibold text-lg mb-1">Default bio</h3>
-              <p className="font-sans-ui text-sm text-muted-foreground mb-4">Auto-applied to every new scraped listing. You can override per-listing in the Listings tab.</p>
-              <Textarea rows={5} value={defaultBio} onChange={(e) => setDefaultBio(e.target.value)} className="font-sans-ui" />
-              <Button
-                className="mt-4 bg-primary hover:bg-primary/90"
-                onClick={async () => {
-                  try {
-                    await adminAction("update_setting", { setting_key: "default_bio", value: defaultBio });
-                    toast.success("Default bio saved");
-                  } catch (e: any) { toast.error(e.message); }
-                }}
-              ><Save className="w-4 h-4 mr-2" />Save default bio</Button>
-            </Card>
+          <TabsContent value="applications" className="mt-6">
+            <ApplicationsPanel applications={applications} listingNameById={listingNameById} isMaster={isMaster} groups={groups} />
           </TabsContent>
 
-          <TabsContent value="users" className="mt-6">
-            <UsersPanel users={users} reload={load} adminAction={adminAction} />
-          </TabsContent>
+          {isMaster && (
+            <TabsContent value="settings" className="mt-6 space-y-6">
+              <Card className="p-6 max-w-2xl">
+                <h3 className="font-semibold text-lg mb-1">Tenant page heading</h3>
+                <p className="font-sans-ui text-sm text-muted-foreground mb-4">The small uppercase line shown above the listing count on every tenant page.</p>
+                <Input value={tenantHeading} onChange={(e) => setTenantHeading(e.target.value)} className="font-sans-ui" />
+                <Button
+                  className="mt-4 bg-primary hover:bg-primary/90"
+                  onClick={async () => {
+                    try {
+                      await adminAction("update_setting", { setting_key: "tenant_heading", value: tenantHeading });
+                      toast.success("Heading saved");
+                    } catch (e: any) { toast.error(e.message); }
+                  }}
+                ><Save className="w-4 h-4 mr-2" />Save heading</Button>
+              </Card>
 
-          {!isMaster && (
+              <Card className="p-6 max-w-2xl">
+                <h3 className="font-semibold text-lg mb-1">Default bio</h3>
+                <p className="font-sans-ui text-sm text-muted-foreground mb-4">Auto-applied to every new scraped listing. You can override per-listing in the Listings tab.</p>
+                <Textarea rows={5} value={defaultBio} onChange={(e) => setDefaultBio(e.target.value)} className="font-sans-ui" />
+                <Button
+                  className="mt-4 bg-primary hover:bg-primary/90"
+                  onClick={async () => {
+                    try {
+                      await adminAction("update_setting", { setting_key: "default_bio", value: defaultBio });
+                      toast.success("Default bio saved");
+                    } catch (e: any) { toast.error(e.message); }
+                  }}
+                ><Save className="w-4 h-4 mr-2" />Save default bio</Button>
+              </Card>
+            </TabsContent>
+          )}
+
+          {isMaster && (
+            <TabsContent value="users" className="mt-6">
+              <UsersPanel users={users} reload={load} adminAction={adminAction} />
+            </TabsContent>
+          )}
+
+          {isMaster && (
             <TabsContent value="ai" className="mt-6">
               <AIAssistant context={{ listings, slug }} reload={load} />
             </TabsContent>
