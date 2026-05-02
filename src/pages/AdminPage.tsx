@@ -54,12 +54,12 @@ const AdminPage = () => {
   const load = async () => {
     if (!slug && !masterKey) {
       setLoading(false);
-      setErrorText("Open the admin link sent by the bot, or open the master admin link from the home page.");
+      setForbidden(true);
       return;
     }
     if (slug && !adminKey) {
       setLoading(false);
-      setErrorText("Missing admin key. Open the full admin link sent by the bot — it includes a ?key=… parameter.");
+      setForbidden(true);
       return;
     }
     setLoading(true);
@@ -76,6 +76,7 @@ const AdminPage = () => {
       setDefaultBio(data.defaultBio ?? "");
       setTenantHeading(data.tenantHeading ?? "Private landlord rental listing");
       setUsers(data.users ?? []);
+      setApplications(data.applications ?? []);
       const ids = new Set(items.map((l: any) => l.id));
       const counts: Record<string, { yes: number; no: number }> = {};
       (data.interests ?? []).forEach((i: any) => {
@@ -85,7 +86,10 @@ const AdminPage = () => {
       });
       setInterestCounts(counts);
     } catch (e: any) {
-      setErrorText(e.message ?? "Could not load admin page");
+      const msg = e.message ?? "Could not load admin page";
+      // Bad/missing key responses → forbidden
+      if (/invalid|missing/i.test(msg)) setForbidden(true);
+      else setErrorText(msg);
     } finally {
       setLoading(false);
     }
