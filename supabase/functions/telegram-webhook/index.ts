@@ -391,7 +391,7 @@ async function handleUpdate(update: any, req: Request) {
     return;
   }
 
-  // /setcredits <telegram_id> <amount>  (admin only)
+  // /setcredits <telegram_id> <amount>  (admin only) — set exact value
   if (text.startsWith("/setcredits") && user.is_admin) {
     const m = text.match(/^\/setcredits\s+(\d+)\s+(\d+)/);
     if (!m) { await sendMessage(chatId, "Usage: /setcredits 123456789 50"); return; }
@@ -400,6 +400,45 @@ async function handleUpdate(update: any, req: Request) {
     await supabase.from("bot_users").update({ credits_remaining: credits }).eq("telegram_id", targetId).eq("is_admin", false);
     await sendMessage(chatId, `🪙 Set <code>${targetId}</code> → ${credits} credits`);
     return;
+  }
+
+  // /addcredits <telegram_id> <amount>  (admin only) — add (or subtract with negative)
+  if (text.startsWith("/addcredits") && user.is_admin) {
+    const m = text.match(/^\/addcredits\s+(\d+)\s+(-?\d+)/);
+    if (!m) { await sendMessage(chatId, "Usage: /addcredits 123456789 25  (use a negative number to subtract)"); return; }
+    const targetId = Number(m[1]);
+    const delta = Number(m[2]);
+    const { data: row } = await supabase.from("bot_users").select("credits_remaining,is_admin").eq("telegram_id", targetId).maybeSingle();
+    if (!row || row.is_admin) { await sendMessage(chatId, "Cannot adjust this user."); return; }
+    const next = Math.max(0, (row.credits_remaining ?? 0) + delta);
+    await supabase.from("bot_users").update({ credits_remaining: next }).eq("telegram_id", targetId);
+    await sendMessage(chatId, `🪙 <code>${targetId}</code> → ${next} credits (${delta >= 0 ? "+" : ""}${delta})`);
+    return;
+  }
+
+  // Awaiting custom credit amount from the inline-button flow
+  if (user.is_admin) {
+    const adminState = await getState(ADMIN_ID);
+    if (adminState?.state === "awaiting_custom_credits") {
+      const targetId = Number(adminState.data?.target_id);
+      const delta = parseInt(text.trim(), 10);
+      if (!targetId || isNaN(delta)) {
+        await sendMessage(chatId, "⚠️ Send a whole number (e.g. <code>25</code> or <code>-10</code>). Or send /cancel.");
+        if (text.trim() === "/cancel") await clearState(ADMIN_ID);
+        return;
+      }
+      const { data: row } = await supabase.from("bot_users").select("credits_remaining,is_admin").eq("telegram_id", targetId).maybeSingle();
+      if (!row || row.is_admin) {
+        await sendMessage(chatId, "Cannot adjust this user.");
+        await clearState(ADMIN_ID);
+        return;
+      }
+      const next = Math.max(0, (row.credits_remaining ?? 0) + delta);
+      await supabase.from("bot_users").update({ credits_remaining: next }).eq("telegram_id", targetId);
+      await clearState(ADMIN_ID);
+      await sendMessage(chatId, `🪙 <code>${targetId}</code> → <b>${next}</b> credits (${delta >= 0 ? "+" : ""}${delta})`, { reply_markup: kbFor(user) });
+      return;
+    }
   }
 
   if (!user.is_allowed) {
