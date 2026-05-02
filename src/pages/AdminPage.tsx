@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Sparkles, ExternalLink, Eye, EyeOff, Save, Send, Users, Trash2, Heart, X } from "lucide-react";
+import { Sparkles, ExternalLink, Eye, EyeOff, Save, Send, Users, Trash2, Heart, X, Inbox } from "lucide-react";
 import { toast } from "sonner";
 
 type Listing = {
@@ -21,6 +21,7 @@ type Listing = {
 type Photo = { id: string; url: string; is_hidden: boolean; position: number };
 type BotUser = { telegram_id: number; username: string | null; first_name: string | null; last_name: string | null; is_allowed: boolean; is_admin: boolean; credits_remaining: number; created_at: string };
 type Group = { id: string; slug: string; title: string | null; created_at: string; listing_count?: number };
+type Application = { id: string; listing_id: string | null; link_group_id: string | null; data: Record<string, string>; created_at: string };
 
 const AdminPage = () => {
   const { slug } = useParams();
