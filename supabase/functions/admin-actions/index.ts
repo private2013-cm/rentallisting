@@ -41,15 +41,27 @@ Deno.serve(async (req) => {
     const group = auth.group;
 
     if (action === "load") {
-      const [headingRow, bioRow, usersRes, interestsRes] = await Promise.all([
+      const [headingRow, bioRow, interestsRes] = await Promise.all([
         supabase.from("app_settings").select("value").eq("key", "tenant_heading").maybeSingle(),
         supabase.from("app_settings").select("value").eq("key", "default_bio").maybeSingle(),
-        supabase.from("bot_users").select("*").order("created_at", { ascending: false }).limit(200),
         supabase.from("listing_interests").select("listing_id, is_interested"),
       ]);
 
+      // Users tab: only super admin sees it
+      let users: any[] = [];
+      if (auth.isMaster) {
+        const { data: usersData } = await supabase
+          .from("bot_users")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(200);
+        users = usersData ?? [];
+      }
+
       let listings: any[] = [];
       let groupsOut: any[] = [];
+      let applications: any[] = [];
+
       if (group) {
         const { data } = await supabase
           .from("listings")
@@ -57,26 +69,47 @@ Deno.serve(async (req) => {
           .eq("link_group_id", group.id)
           .order("position");
         listings = data ?? [];
+
+        // Applications scoped to this group
+        const { data: apps } = await supabase
+          .from("applications")
+          .select("*")
+          .eq("link_group_id", group.id)
+          .order("created_at", { ascending: false })
+          .limit(500);
+        applications = apps ?? [];
       }
       if (auth.isMaster) {
         const { data: gs } = await supabase.from("link_groups").select("*").order("created_at", { ascending: false }).limit(200);
         const groupIds = (gs ?? []).map((g: any) => g.id);
-        let counts: Record<string, number> = {};
+        const counts: Record<string, number> = {};
         if (groupIds.length) {
           const { data: ls } = await supabase.from("listings").select("link_group_id").in("link_group_id", groupIds);
           (ls ?? []).forEach((l: any) => { counts[l.link_group_id] = (counts[l.link_group_id] ?? 0) + 1; });
         }
         groupsOut = (gs ?? []).map((g: any) => ({ ...g, listing_count: counts[g.id] ?? 0 }));
+
+        // Master sees ALL applications
+        if (!group) {
+          const { data: allApps } = await supabase
+            .from("applications")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(500);
+          applications = allApps ?? [];
+        }
       }
 
       return new Response(JSON.stringify({
         groupId: group?.id ?? null,
         groups: groupsOut,
         listings,
+        applications,
         defaultBio: typeof bioRow.data?.value === "string" ? bioRow.data.value : "",
         tenantHeading: typeof headingRow.data?.value === "string" ? headingRow.data.value : "Private landlord rental listing",
-        users: usersRes.data ?? [],
+        users,
         interests: interestsRes.data ?? [],
+        isMaster: auth.isMaster,
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
