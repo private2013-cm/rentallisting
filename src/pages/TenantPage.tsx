@@ -19,6 +19,7 @@ type Listing = {
   sqft: number | null;
   description: string | null;
   bio: string | null;
+  heading: string | null;
 };
 type Photo = { id: string; url: string; is_hidden: boolean; position: number };
 
@@ -44,7 +45,7 @@ const TenantPage = () => {
 
       const { data: rows } = await supabase
         .from("listings")
-        .select("id, address, price, deposit, beds, baths, sqft, description, bio, position, listing_photos(id, url, is_hidden, position)")
+        .select("id, address, price, deposit, beds, baths, sqft, description, bio, heading, position, listing_photos(id, url, is_hidden, position)")
         .eq("link_group_id", group.id)
         .order("position");
 
@@ -69,11 +70,14 @@ const TenantPage = () => {
   if (loading) return <div className="min-h-screen flex items-center justify-center text-muted-foreground font-sans-ui">Loading…</div>;
   if (notFound) return <div className="min-h-screen flex items-center justify-center text-muted-foreground font-sans-ui">Listing not found.</div>;
 
+  // If exactly one listing, prefer its custom heading in the header.
+  const headerHeading = listings.length === 1 && listings[0]?.heading ? listings[0].heading : heading;
+
   return (
     <main className="min-h-screen bg-gradient-warm pb-16">
       <header className="bg-primary text-primary-foreground py-8 px-6 shadow-soft">
         <div className="max-w-5xl mx-auto">
-          <p className="font-sans-ui uppercase tracking-widest text-xs text-primary-foreground/70 mb-2">{heading}</p>
+          <p className="font-sans-ui uppercase tracking-widest text-xs text-primary-foreground/70 mb-2">{headerHeading}</p>
           <h1 className="text-3xl md:text-4xl font-semibold">
             {listings.length === 1 ? "Available now" : `${listings.length} listings available`}
           </h1>
@@ -82,14 +86,14 @@ const TenantPage = () => {
 
       <div className="max-w-5xl mx-auto px-6 mt-10 space-y-12">
         {listings.map((l) => (
-          <ListingCard key={l.id} listing={l} />
+          <ListingCard key={l.id} listing={l} fallbackHeading={heading} showHeading={listings.length > 1} />
         ))}
       </div>
     </main>
   );
 };
 
-function ListingCard({ listing }: { listing: Listing & { photos: Photo[] } }) {
+function ListingCard({ listing, fallbackHeading, showHeading }: { listing: Listing & { photos: Photo[] }; fallbackHeading: string; showHeading: boolean }) {
   const [active, setActive] = useState(0);
   const [interestSent, setInterestSent] = useState<null | boolean>(null);
   const [dialog, setDialog] = useState<null | "apply" | "tour">(null);
@@ -153,6 +157,11 @@ function ListingCard({ listing }: { listing: Listing & { photos: Photo[] } }) {
 
       <div className="p-6 sm:p-8 space-y-5">
         <div>
+          {showHeading && (
+            <p className="font-sans-ui uppercase tracking-widest text-xs text-muted-foreground mb-2">
+              {listing.heading ?? fallbackHeading}
+            </p>
+          )}
           <h2 className="text-2xl sm:text-3xl font-semibold text-primary leading-tight">
             {listing.address ?? "Address pending"}
           </h2>

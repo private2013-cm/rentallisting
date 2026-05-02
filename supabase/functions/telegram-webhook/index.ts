@@ -7,7 +7,8 @@ import { draftFromUrl, scrapeZillow } from "../_shared/zillow.ts";
 // Persistent reply keyboard shown to allowed users
 const userKeyboard = {
   keyboard: [
-    [{ text: "🏠 New listing link" }, { text: "🪙 My credits" }],
+    [{ text: "🏠 New listing link" }, { text: "📝 Edit my listings" }],
+    [{ text: "💬 Message admin" }, { text: "🪙 My credits" }],
     [{ text: "❓ Help" }],
   ],
   resize_keyboard: true,
@@ -15,9 +16,9 @@ const userKeyboard = {
 };
 const adminKeyboard = {
   keyboard: [
-    [{ text: "🏠 New listing link" }, { text: "🪙 My credits" }],
+    [{ text: "🏠 New listing link" }, { text: "📝 Edit my listings" }],
     [{ text: "👥 Users" }, { text: "🛡 Master admin" }],
-    [{ text: "❓ Help" }],
+    [{ text: "📣 Broadcast" }, { text: "❓ Help" }],
   ],
   resize_keyboard: true,
   is_persistent: true,
@@ -206,6 +207,44 @@ async function finishGroup(chatId: number, groupId: string, base: string) {
   await clearState(chatId);
 }
 
+async function showListingPicker(chatId: number, ownerId: number) {
+  // Find groups owned by this user, list their listings
+  const { data: groups } = await supabase.from("link_groups").select("id, slug").eq("owner_telegram_id", ownerId);
+  const gids = (groups ?? []).map(g => g.id);
+  if (!gids.length) { await sendMessage(chatId, "You don't have any listings yet. Tap 🏠 New listing link to create one."); return; }
+  const { data: listings } = await supabase.from("listings").select("id, address, price, link_group_id").in("link_group_id", gids).order("created_at", { ascending: false }).limit(30);
+  if (!listings?.length) { await sendMessage(chatId, "You don't have any listings yet."); return; }
+  const slugById = new Map((groups ?? []).map(g => [g.id, g.slug]));
+  const buttons = listings.map(l => [{
+    text: `${l.address ? l.address.slice(0,40) : "Untitled"} ${l.price ? `· $${l.price}` : ""} · /${slugById.get(l.link_group_id) ?? ""}`,
+    callback_data: `editpick:${l.id}`,
+  }]);
+  await sendMessage(chatId, "📝 <b>Pick a listing to edit:</b>", { reply_markup: { inline_keyboard: buttons } });
+}
+
+async function showFieldMenu(chatId: number, listingId: string) {
+  const { data: l } = await supabase.from("listings").select("*").eq("id", listingId).maybeSingle();
+  if (!l) { await sendMessage(chatId, "Listing not found."); return; }
+  const fmt = (v: any) => (v === null || v === undefined || v === "") ? "—" : String(v);
+  const summary =
+    `<b>${l.address ?? "Untitled"}</b>\n` +
+    `Heading: ${fmt(l.heading)}\n` +
+    `Price: $${fmt(l.price)} · Deposit: $${fmt(l.deposit)}\n` +
+    `Beds: ${fmt(l.beds)} · Sqft: ${fmt(l.sqft)}\n` +
+    `Bio: ${l.bio ? l.bio.slice(0,80) : "—"}\n`;
+  await sendMessage(chatId, `${summary}\n<b>Pick a field to edit:</b>`, {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "💰 Price", callback_data: `editfld:${listingId}:price` }, { text: "💵 Deposit", callback_data: `editfld:${listingId}:deposit` }],
+        [{ text: "🛏 Beds", callback_data: `editfld:${listingId}:beds` }, { text: "📐 Sqft", callback_data: `editfld:${listingId}:sqft` }],
+        [{ text: "📍 Address", callback_data: `editfld:${listingId}:address` }, { text: "🏷 Heading", callback_data: `editfld:${listingId}:heading` }],
+        [{ text: "📝 Bio", callback_data: `editfld:${listingId}:bio` }, { text: "📄 Description", callback_data: `editfld:${listingId}:description` }],
+        [{ text: "⬅️ Back to listings", callback_data: "editback" }],
+      ],
+    },
+  });
+}
+
 async function handleUpdate(update: any, req: Request) {
   // Callback queries (inline buttons)
   if (update.callback_query) {
@@ -267,6 +306,30 @@ async function handleUpdate(update: any, req: Request) {
       await finishGroup(chatId, groupId, base);
       return;
     }
+
+    // Edit-listing flow
+    if (data.startsWith("editpick:")) {
+      const lid = data.split(":")[1];
+      await showFieldMenu(chatId, lid);
+      return;
+    }
+    if (data.startsWith("editfld:")) {
+      const [, lid, field] = data.split(":");
+      const labels: Record<string,string> = { price:"price ($)", deposit:"deposit ($)", beds:"beds", sqft:"square feet", bio:"bio", description:"description", heading:"page heading", address:"address" };
+      await setState(stateId, "awaiting_field_value", { listing_id: lid, field });
+      await sendMessage(chatId, `✏️ Send the new <b>${labels[field] ?? field}</b>. Send <code>-</code> to clear it. Send /cancel to abort.`);
+      return;
+    }
+    if (data === "editback") {
+      await showListingPicker(chatId, fromId);
+      return;
+    }
+    if (fromId === ADMIN_ID && data.startsWith("chatreply:")) {
+      const targetId = Number(data.split(":")[1]);
+      await setState(ADMIN_ID, "replying_to_tenant", { target_id: targetId });
+      await sendMessage(chatId, `💬 Type your reply to <code>${targetId}</code>. /cancel to abort.`);
+      return;
+    }
     return;
   }
 
@@ -286,6 +349,9 @@ async function handleUpdate(update: any, req: Request) {
     "❓ Help": "/help",
     "👥 Users": "/users",
     "🛡 Master admin": "/master",
+    "📝 Edit my listings": "/edit",
+    "💬 Message admin": "/chat",
+    "📣 Broadcast": "/broadcast",
   };
   if (labelMap[text]) text = labelMap[text];
 
@@ -371,7 +437,44 @@ async function handleUpdate(update: any, req: Request) {
     return;
   }
 
-  // /users (admin only)
+  // /edit — show listing picker
+  if (text.startsWith("/edit")) {
+    if (!user.is_allowed) { await sendMessage(chatId, "⏳ Waiting for admin approval."); return; }
+    await showListingPicker(chatId, fromId);
+    return;
+  }
+
+  // /chat — tenant opens chat with super admin
+  if (text.startsWith("/chat") && !user.is_admin) {
+    if (!user.is_allowed) { await sendMessage(chatId, "⏳ Waiting for admin approval."); return; }
+    await setState(stateId, "chatting_admin", {});
+    await sendMessage(chatId, "💬 You're now chatting with the admin. Just type your message. Send /cancel to stop.");
+    return;
+  }
+
+  // /broadcast — super admin only
+  if (text.startsWith("/broadcast") && user.is_admin) {
+    await setState(ADMIN_ID, "awaiting_broadcast", {});
+    await sendMessage(chatId, "📣 Send the broadcast text. It will go to <b>all bot users</b>. Send /cancel to abort.");
+    return;
+  }
+
+  // /reply <tg_id> — super admin replies to a tenant
+  if (text.startsWith("/reply") && user.is_admin) {
+    const m = text.match(/^\/reply\s+(\d+)/);
+    if (!m) { await sendMessage(chatId, "Usage: /reply 123456789"); return; }
+    const targetId = Number(m[1]);
+    await setState(ADMIN_ID, "replying_to_tenant", { target_id: targetId });
+    await sendMessage(chatId, `💬 Now type your reply to <code>${targetId}</code>. Send /cancel to abort.`);
+    return;
+  }
+
+  // /cancel — clear any active state
+  if (text.startsWith("/cancel")) {
+    await clearState(stateId);
+    await sendMessage(chatId, "Cancelled.", { reply_markup: kbFor(user) });
+    return;
+  }
   if (text.startsWith("/users") && user.is_admin) {
     const { data: users } = await supabase.from("bot_users").select("*").order("created_at", { ascending: false }).limit(20);
     const lines = (users ?? []).map(u => {
@@ -448,6 +551,80 @@ async function handleUpdate(update: any, req: Request) {
 
   // Handle awaiting_link state
   const state = await getState(stateId);
+
+  // Awaiting field value (edit-listing flow)
+  if (state?.state === "awaiting_field_value") {
+    const lid = String(state.data?.listing_id ?? "");
+    const field = String(state.data?.field ?? "");
+    const raw = text.trim();
+    const numeric = ["price","deposit","beds","sqft"];
+    let value: any;
+    if (raw === "-" || raw === "") value = null;
+    else if (numeric.includes(field)) {
+      const n = Number(raw);
+      if (isNaN(n)) { await sendMessage(chatId, "⚠️ Send a number, or <code>-</code> to clear."); return; }
+      value = field === "beds" || field === "sqft" ? Math.round(n) : n;
+    } else value = raw;
+    // Verify ownership
+    const { data: l } = await supabase.from("listings").select("id, link_group_id").eq("id", lid).maybeSingle();
+    const { data: grp } = l ? await supabase.from("link_groups").select("owner_telegram_id").eq("id", l.link_group_id).maybeSingle() : { data: null };
+    if (!l || !grp || (Number(grp.owner_telegram_id) !== fromId && !user.is_admin)) {
+      await sendMessage(chatId, "⚠️ You don't own that listing."); await clearState(stateId); return;
+    }
+    const { error } = await supabase.from("listings").update({ [field]: value }).eq("id", lid);
+    if (error) { await sendMessage(chatId, `❌ ${error.message}`); return; }
+    await clearState(stateId);
+    await sendMessage(chatId, `✅ Updated <b>${field}</b>.`);
+    await showFieldMenu(chatId, lid);
+    return;
+  }
+
+  // Awaiting broadcast (super admin)
+  if (user.is_admin && state?.state === "awaiting_broadcast") {
+    await clearState(stateId);
+    const { data: us } = await supabase.from("bot_users").select("telegram_id");
+    const recipients = (us ?? []).map((u: any) => Number(u.telegram_id)).filter(Boolean);
+    let sent = 0, failed = 0;
+    for (const tid of recipients) {
+      try { const r = await sendMessage(tid, `📣 <b>Announcement</b>\n\n${text}`); if (r?.ok) sent++; else failed++; }
+      catch { failed++; }
+      await new Promise(r => setTimeout(r, 35));
+    }
+    await supabase.from("broadcasts").insert({ body: text, sent_count: sent, failed_count: failed });
+    await sendMessage(chatId, `📣 Broadcast sent — ✅ ${sent} · ❌ ${failed}`, { reply_markup: kbFor(user) });
+    return;
+  }
+
+  // Super admin replying to a tenant
+  if (user.is_admin && state?.state === "replying_to_tenant") {
+    const targetId = Number(state.data?.target_id);
+    await clearState(stateId);
+    if (!targetId) { await sendMessage(chatId, "⚠️ Lost target."); return; }
+    await supabase.from("admin_chat_messages").insert({
+      tenant_telegram_id: targetId, sender: "super", body: text, read_by_super: true,
+    });
+    try { await sendMessage(targetId, `💬 <b>Message from admin</b>\n\n${text}`); } catch (_) {}
+    await sendMessage(chatId, `✅ Sent to <code>${targetId}</code>.`, { reply_markup: kbFor(user) });
+    return;
+  }
+
+  // Tenant in chat-with-admin mode
+  if (!user.is_admin && state?.state === "chatting_admin") {
+    await supabase.from("admin_chat_messages").insert({
+      tenant_telegram_id: fromId, sender: "tenant", body: text, read_by_tenant: true,
+    });
+    if (ADMIN_ID) {
+      const handle = user.username ? `@${user.username}` : (user.first_name || `id ${fromId}`);
+      try {
+        await sendMessage(ADMIN_ID, `💬 <b>${handle}</b> (<code>${fromId}</code>):\n\n${text}`, {
+          reply_markup: { inline_keyboard: [[{ text: "↩️ Reply", callback_data: `chatreply:${fromId}` }]] },
+        });
+      } catch (_) {}
+    }
+    await sendMessage(chatId, "✅ Sent. Type another message or /cancel to stop.");
+    return;
+  }
+
   if (state?.state === "awaiting_link") {
     if (groupChat && !(await isTelegramChatAdmin(chatId, fromId))) {
       await sendMessage(chatId, "🔒 Only Telegram group admins can add listings to this group link.");

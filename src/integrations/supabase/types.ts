@@ -40,6 +40,36 @@ export type Database = {
           },
         ]
       }
+      admin_chat_messages: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          read_by_super: boolean
+          read_by_tenant: boolean
+          sender: string
+          tenant_telegram_id: number
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id?: string
+          read_by_super?: boolean
+          read_by_tenant?: boolean
+          sender: string
+          tenant_telegram_id: number
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          read_by_super?: boolean
+          read_by_tenant?: boolean
+          sender?: string
+          tenant_telegram_id?: number
+        }
+        Relationships: []
+      }
       app_settings: {
         Row: {
           key: string
@@ -154,6 +184,30 @@ export type Database = {
         }
         Relationships: []
       }
+      broadcasts: {
+        Row: {
+          body: string
+          created_at: string
+          failed_count: number
+          id: string
+          sent_count: number
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          failed_count?: number
+          id?: string
+          sent_count?: number
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          failed_count?: number
+          id?: string
+          sent_count?: number
+        }
+        Relationships: []
+      }
       link_groups: {
         Row: {
           created_at: string
@@ -251,6 +305,7 @@ export type Database = {
           created_at: string
           deposit: number | null
           description: string | null
+          heading: string | null
           id: string
           link_group_id: string
           position: number
@@ -267,6 +322,7 @@ export type Database = {
           created_at?: string
           deposit?: number | null
           description?: string | null
+          heading?: string | null
           id?: string
           link_group_id: string
           position?: number
@@ -283,6 +339,7 @@ export type Database = {
           created_at?: string
           deposit?: number | null
           description?: string | null
+          heading?: string | null
           id?: string
           link_group_id?: string
           position?: number
