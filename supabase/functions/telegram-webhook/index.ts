@@ -229,10 +229,15 @@ async function handleUpdate(update: any, req: Request) {
     if (fromId === ADMIN_ID && data.startsWith("addcred:")) {
       const [, idStr, amtStr] = data.split(":");
       const targetId = Number(idStr);
+      if (amtStr === "custom") {
+        await setState(ADMIN_ID, "awaiting_custom_credits", { target_id: targetId });
+        await sendMessage(ADMIN_ID, `✏️ Send the credit amount to ADD to <code>${targetId}</code> (e.g. <code>25</code>, or negative like <code>-10</code> to subtract).`);
+        return;
+      }
       const amt = Number(amtStr);
       const { data: row } = await supabase.from("bot_users").select("credits_remaining,is_admin").eq("telegram_id", targetId).maybeSingle();
       if (!row || row.is_admin) { await sendMessage(ADMIN_ID, "Cannot adjust this user."); return; }
-      const next = (row.credits_remaining ?? 0) + amt;
+      const next = Math.max(0, (row.credits_remaining ?? 0) + amt);
       await supabase.from("bot_users").update({ credits_remaining: next }).eq("telegram_id", targetId);
       await sendMessage(ADMIN_ID, `🪙 <code>${targetId}</code> → ${next} credits`);
       return;
@@ -306,11 +311,20 @@ async function handleUpdate(update: any, req: Request) {
       await sendMessage(chatId, "🔒 Only Telegram group admins can start and manage listing links in this group.");
       return;
     }
+    const handle = user.username ? `@${user.username}` : (user.first_name || `id ${user.telegram_id}`);
     if (!user.is_allowed) {
-      await sendMessage(chatId, "👋 Welcome! Your access is pending admin approval. You'll be notified when approved.");
+      await sendMessage(chatId, `👋 Welcome <b>${handle}</b>!\n\nYour access is pending admin approval. You'll be notified when approved.`);
       await notifyAdminPendingApproval(user);
       return;
     }
+    const creditLine = user.is_admin
+      ? "🪙 Credits: <b>unlimited</b> (admin)"
+      : `🪙 Credits remaining: <b>${user.credits_remaining ?? 0}</b>`;
+    await sendMessage(
+      chatId,
+      `👋 Welcome <b>${handle}</b>!\n${creditLine}\n\nTap 🏠 <b>New listing link</b> below or paste a Zillow URL to begin.`,
+      { reply_markup: kbFor(user) }
+    );
     await startNewGroup();
     return;
   }
@@ -324,7 +338,7 @@ async function handleUpdate(update: any, req: Request) {
       "Add multiple listings to the same shareable link before tapping <i>Finish</i>.",
     ];
     if (user.is_admin) {
-      lines.push("", "<b>Admin</b>", "👥 Users — approve / deny / set credits", "🛡 Master admin — full dashboard link");
+      lines.push("", "<b>Admin</b>", "👥 Users — approve / deny / set credits", "🛡 Master admin — full dashboard link", "<code>/addcredits TG_ID 25</code> — add credits (negative subtracts)", "<code>/setcredits TG_ID 100</code> — set exact balance");
     }
     await sendMessage(chatId, lines.join("\n"), { reply_markup: kbFor(user) });
     return;
@@ -371,12 +385,13 @@ async function handleUpdate(update: any, req: Request) {
       },
       { text: `+10 🪙`, callback_data: `addcred:${u.telegram_id}:10` },
       { text: `+100 🪙`, callback_data: `addcred:${u.telegram_id}:100` },
+      { text: `✏️ Custom`, callback_data: `addcred:${u.telegram_id}:custom` },
     ]);
     await sendMessage(chatId, `<b>Recent users:</b>\n\n${lines.join("\n")}\n\nReply <code>/setcredits TG_ID NUMBER</code> to set an exact balance.`, { reply_markup: { inline_keyboard: keyboard } });
     return;
   }
 
-  // /setcredits <telegram_id> <amount>  (admin only)
+  // /setcredits <telegram_id> <amount>  (admin only) — set exact value
   if (text.startsWith("/setcredits") && user.is_admin) {
     const m = text.match(/^\/setcredits\s+(\d+)\s+(\d+)/);
     if (!m) { await sendMessage(chatId, "Usage: /setcredits 123456789 50"); return; }
@@ -385,6 +400,45 @@ async function handleUpdate(update: any, req: Request) {
     await supabase.from("bot_users").update({ credits_remaining: credits }).eq("telegram_id", targetId).eq("is_admin", false);
     await sendMessage(chatId, `🪙 Set <code>${targetId}</code> → ${credits} credits`);
     return;
+  }
+
+  // /addcredits <telegram_id> <amount>  (admin only) — add (or subtract with negative)
+  if (text.startsWith("/addcredits") && user.is_admin) {
+    const m = text.match(/^\/addcredits\s+(\d+)\s+(-?\d+)/);
+    if (!m) { await sendMessage(chatId, "Usage: /addcredits 123456789 25  (use a negative number to subtract)"); return; }
+    const targetId = Number(m[1]);
+    const delta = Number(m[2]);
+    const { data: row } = await supabase.from("bot_users").select("credits_remaining,is_admin").eq("telegram_id", targetId).maybeSingle();
+    if (!row || row.is_admin) { await sendMessage(chatId, "Cannot adjust this user."); return; }
+    const next = Math.max(0, (row.credits_remaining ?? 0) + delta);
+    await supabase.from("bot_users").update({ credits_remaining: next }).eq("telegram_id", targetId);
+    await sendMessage(chatId, `🪙 <code>${targetId}</code> → ${next} credits (${delta >= 0 ? "+" : ""}${delta})`);
+    return;
+  }
+
+  // Awaiting custom credit amount from the inline-button flow
+  if (user.is_admin) {
+    const adminState = await getState(ADMIN_ID);
+    if (adminState?.state === "awaiting_custom_credits") {
+      const targetId = Number(adminState.data?.target_id);
+      const delta = parseInt(text.trim(), 10);
+      if (!targetId || isNaN(delta)) {
+        await sendMessage(chatId, "⚠️ Send a whole number (e.g. <code>25</code> or <code>-10</code>). Or send /cancel.");
+        if (text.trim() === "/cancel") await clearState(ADMIN_ID);
+        return;
+      }
+      const { data: row } = await supabase.from("bot_users").select("credits_remaining,is_admin").eq("telegram_id", targetId).maybeSingle();
+      if (!row || row.is_admin) {
+        await sendMessage(chatId, "Cannot adjust this user.");
+        await clearState(ADMIN_ID);
+        return;
+      }
+      const next = Math.max(0, (row.credits_remaining ?? 0) + delta);
+      await supabase.from("bot_users").update({ credits_remaining: next }).eq("telegram_id", targetId);
+      await clearState(ADMIN_ID);
+      await sendMessage(chatId, `🪙 <code>${targetId}</code> → <b>${next}</b> credits (${delta >= 0 ? "+" : ""}${delta})`, { reply_markup: kbFor(user) });
+      return;
+    }
   }
 
   if (!user.is_allowed) {

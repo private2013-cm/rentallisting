@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Sparkles, ExternalLink, Eye, EyeOff, Save, Send, Users, Trash2, Heart, X } from "lucide-react";
+import { Sparkles, ExternalLink, Eye, EyeOff, Save, Send, Users, Trash2, Heart, X, Inbox } from "lucide-react";
 import { toast } from "sonner";
 
 type Listing = {
@@ -21,6 +21,7 @@ type Listing = {
 type Photo = { id: string; url: string; is_hidden: boolean; position: number };
 type BotUser = { telegram_id: number; username: string | null; first_name: string | null; last_name: string | null; is_allowed: boolean; is_admin: boolean; credits_remaining: number; created_at: string };
 type Group = { id: string; slug: string; title: string | null; created_at: string; listing_count?: number };
+type Application = { id: string; listing_id: string | null; link_group_id: string | null; data: Record<string, string>; created_at: string };
 
 const AdminPage = () => {
   const { slug } = useParams();
@@ -30,9 +31,11 @@ const AdminPage = () => {
   const [defaultBio, setDefaultBio] = useState("");
   const [tenantHeading, setTenantHeading] = useState("Private landlord rental listing");
   const [users, setUsers] = useState<BotUser[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
   const [interestCounts, setInterestCounts] = useState<Record<string, { yes: number; no: number }>>({});
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState("");
+  const [forbidden, setForbidden] = useState(false);
   const params = new URLSearchParams(window.location.search);
   const adminKey = params.get("key") ?? "";
   const masterKey = params.get("master") ?? "";
@@ -51,12 +54,12 @@ const AdminPage = () => {
   const load = async () => {
     if (!slug && !masterKey) {
       setLoading(false);
-      setErrorText("Open the admin link sent by the bot, or open the master admin link from the home page.");
+      setForbidden(true);
       return;
     }
     if (slug && !adminKey) {
       setLoading(false);
-      setErrorText("Missing admin key. Open the full admin link sent by the bot — it includes a ?key=… parameter.");
+      setForbidden(true);
       return;
     }
     setLoading(true);
@@ -73,6 +76,7 @@ const AdminPage = () => {
       setDefaultBio(data.defaultBio ?? "");
       setTenantHeading(data.tenantHeading ?? "Private landlord rental listing");
       setUsers(data.users ?? []);
+      setApplications(data.applications ?? []);
       const ids = new Set(items.map((l: any) => l.id));
       const counts: Record<string, { yes: number; no: number }> = {};
       (data.interests ?? []).forEach((i: any) => {
@@ -82,7 +86,10 @@ const AdminPage = () => {
       });
       setInterestCounts(counts);
     } catch (e: any) {
-      setErrorText(e.message ?? "Could not load admin page");
+      const msg = e.message ?? "Could not load admin page";
+      // Bad/missing key responses → forbidden
+      if (/invalid|missing/i.test(msg)) setForbidden(true);
+      else setErrorText(msg);
     } finally {
       setLoading(false);
     }
@@ -96,23 +103,42 @@ const AdminPage = () => {
       .on("postgres_changes", { event: "*", schema: "public", table: "listings" }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "listing_photos" }, load)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "listing_interests" }, load)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "applications" }, load)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
     // eslint-disable-next-line
   }, [slug]);
 
   if (loading) return <div className="min-h-screen flex items-center justify-center text-muted-foreground font-sans-ui">Loading…</div>;
+  if (forbidden) {
+    return (
+      <main className="min-h-screen bg-secondary/30 flex items-center justify-center px-6 py-12">
+        <Card className="max-w-md w-full p-8 text-center shadow-soft">
+          <h1 className="text-3xl font-semibold text-destructive mb-3">403 · Forbidden</h1>
+          <p className="font-sans-ui text-muted-foreground mb-6">
+            You don't have access to this page. Admin links require the access key sent by the bot.
+          </p>
+          <Button asChild variant="outline" className="font-sans-ui"><Link to="/">Go home</Link></Button>
+        </Card>
+      </main>
+    );
+  }
   if (errorText) {
     return (
       <main className="min-h-screen bg-secondary/30 flex items-center justify-center px-6 py-12">
         <Card className="max-w-lg w-full p-6 text-center shadow-soft">
-          <h1 className="text-2xl font-semibold text-primary mb-3">Admin link needed</h1>
+          <h1 className="text-2xl font-semibold text-primary mb-3">Something went wrong</h1>
           <p className="font-sans-ui text-muted-foreground mb-5">{errorText}</p>
           <Button asChild variant="outline" className="font-sans-ui"><Link to="/">Back home</Link></Button>
         </Card>
       </main>
     );
   }
+
+  const listingNameById = (id: string | null) => {
+    if (!id) return "—";
+    return listings.find((l) => l.id === id)?.address ?? "Listing";
+  };
 
   return (
     <main className="min-h-screen bg-secondary/30">
@@ -141,9 +167,10 @@ const AdminPage = () => {
           <TabsList className="font-sans-ui">
             {isMaster && <TabsTrigger value="groups">Listing groups</TabsTrigger>}
             {!isMaster && <TabsTrigger value="listings">Listings</TabsTrigger>}
-            <TabsTrigger value="settings">Defaults</TabsTrigger>
-            <TabsTrigger value="users"><Users className="w-3.5 h-3.5 mr-1.5" />Users</TabsTrigger>
-            {!isMaster && <TabsTrigger value="ai"><Sparkles className="w-3.5 h-3.5 mr-1.5" />AI assistant</TabsTrigger>}
+            <TabsTrigger value="applications"><Inbox className="w-3.5 h-3.5 mr-1.5" />Applications{applications.length > 0 && <span className="ml-1.5 text-xs bg-accent/30 px-1.5 rounded">{applications.length}</span>}</TabsTrigger>
+            {isMaster && <TabsTrigger value="settings">Defaults</TabsTrigger>}
+            {isMaster && <TabsTrigger value="users"><Users className="w-3.5 h-3.5 mr-1.5" />Users</TabsTrigger>}
+            {isMaster && <TabsTrigger value="ai"><Sparkles className="w-3.5 h-3.5 mr-1.5" />AI assistant</TabsTrigger>}
           </TabsList>
 
           {isMaster && (
@@ -182,43 +209,51 @@ const AdminPage = () => {
             </TabsContent>
           )}
 
-          <TabsContent value="settings" className="mt-6 space-y-6">
-            <Card className="p-6 max-w-2xl">
-              <h3 className="font-semibold text-lg mb-1">Tenant page heading</h3>
-              <p className="font-sans-ui text-sm text-muted-foreground mb-4">The small uppercase line shown above the listing count on every tenant page.</p>
-              <Input value={tenantHeading} onChange={(e) => setTenantHeading(e.target.value)} className="font-sans-ui" />
-              <Button
-                className="mt-4 bg-primary hover:bg-primary/90"
-                onClick={async () => {
-                  try {
-                    await adminAction("update_setting", { setting_key: "tenant_heading", value: tenantHeading });
-                    toast.success("Heading saved");
-                  } catch (e: any) { toast.error(e.message); }
-                }}
-              ><Save className="w-4 h-4 mr-2" />Save heading</Button>
-            </Card>
-
-            <Card className="p-6 max-w-2xl">
-              <h3 className="font-semibold text-lg mb-1">Default bio</h3>
-              <p className="font-sans-ui text-sm text-muted-foreground mb-4">Auto-applied to every new scraped listing. You can override per-listing in the Listings tab.</p>
-              <Textarea rows={5} value={defaultBio} onChange={(e) => setDefaultBio(e.target.value)} className="font-sans-ui" />
-              <Button
-                className="mt-4 bg-primary hover:bg-primary/90"
-                onClick={async () => {
-                  try {
-                    await adminAction("update_setting", { setting_key: "default_bio", value: defaultBio });
-                    toast.success("Default bio saved");
-                  } catch (e: any) { toast.error(e.message); }
-                }}
-              ><Save className="w-4 h-4 mr-2" />Save default bio</Button>
-            </Card>
+          <TabsContent value="applications" className="mt-6">
+            <ApplicationsPanel applications={applications} listingNameById={listingNameById} isMaster={isMaster} groups={groups} />
           </TabsContent>
 
-          <TabsContent value="users" className="mt-6">
-            <UsersPanel users={users} reload={load} adminAction={adminAction} />
-          </TabsContent>
+          {isMaster && (
+            <TabsContent value="settings" className="mt-6 space-y-6">
+              <Card className="p-6 max-w-2xl">
+                <h3 className="font-semibold text-lg mb-1">Tenant page heading</h3>
+                <p className="font-sans-ui text-sm text-muted-foreground mb-4">The small uppercase line shown above the listing count on every tenant page.</p>
+                <Input value={tenantHeading} onChange={(e) => setTenantHeading(e.target.value)} className="font-sans-ui" />
+                <Button
+                  className="mt-4 bg-primary hover:bg-primary/90"
+                  onClick={async () => {
+                    try {
+                      await adminAction("update_setting", { setting_key: "tenant_heading", value: tenantHeading });
+                      toast.success("Heading saved");
+                    } catch (e: any) { toast.error(e.message); }
+                  }}
+                ><Save className="w-4 h-4 mr-2" />Save heading</Button>
+              </Card>
 
-          {!isMaster && (
+              <Card className="p-6 max-w-2xl">
+                <h3 className="font-semibold text-lg mb-1">Default bio</h3>
+                <p className="font-sans-ui text-sm text-muted-foreground mb-4">Auto-applied to every new scraped listing. You can override per-listing in the Listings tab.</p>
+                <Textarea rows={5} value={defaultBio} onChange={(e) => setDefaultBio(e.target.value)} className="font-sans-ui" />
+                <Button
+                  className="mt-4 bg-primary hover:bg-primary/90"
+                  onClick={async () => {
+                    try {
+                      await adminAction("update_setting", { setting_key: "default_bio", value: defaultBio });
+                      toast.success("Default bio saved");
+                    } catch (e: any) { toast.error(e.message); }
+                  }}
+                ><Save className="w-4 h-4 mr-2" />Save default bio</Button>
+              </Card>
+            </TabsContent>
+          )}
+
+          {isMaster && (
+            <TabsContent value="users" className="mt-6">
+              <UsersPanel users={users} reload={load} adminAction={adminAction} />
+            </TabsContent>
+          )}
+
+          {isMaster && (
             <TabsContent value="ai" className="mt-6">
               <AIAssistant context={{ listings, slug }} reload={load} />
             </TabsContent>
@@ -492,4 +527,50 @@ function AIAssistant({ context, reload }: { context: any; reload: () => void }) 
   );
 }
 
+function ApplicationsPanel({ applications, listingNameById, isMaster, groups }: {
+  applications: Application[];
+  listingNameById: (id: string | null) => string;
+  isMaster: boolean;
+  groups: Group[];
+}) {
+  const groupSlug = (gid: string | null) => {
+    if (!gid) return "—";
+    return groups.find((g) => g.id === gid)?.slug ?? "—";
+  };
+  return (
+    <Card className="p-6">
+      <h3 className="font-semibold text-lg mb-1">{isMaster ? "All applications" : "Applications for your listings"}</h3>
+      <p className="font-sans-ui text-sm text-muted-foreground mb-4">
+        Each submission is also forwarded to {isMaster ? "you on Telegram" : "your Telegram and the super admin"}.
+      </p>
+      {applications.length === 0 && (
+        <p className="font-sans-ui text-sm text-muted-foreground">No applications yet.</p>
+      )}
+      <div className="space-y-3 font-sans-ui">
+        {applications.map((a) => (
+          <div key={a.id} className="p-4 rounded-md bg-secondary/40 border border-border">
+            <div className="flex flex-wrap justify-between items-start gap-2 mb-2">
+              <div>
+                <p className="font-medium text-sm">🏠 {listingNameById(a.listing_id)}</p>
+                {isMaster && (
+                  <p className="text-xs text-muted-foreground">Group: /{groupSlug(a.link_group_id)}</p>
+                )}
+              </div>
+              <span className="text-xs text-muted-foreground">{new Date(a.created_at).toLocaleString()}</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-sm">
+              {Object.entries(a.data || {}).map(([k, v]) => (
+                <div key={k} className="break-words">
+                  <span className="text-muted-foreground">{k}:</span> <span className="font-medium">{v}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 export default AdminPage;
+
