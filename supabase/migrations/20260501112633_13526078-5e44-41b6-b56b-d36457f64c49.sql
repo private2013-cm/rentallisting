@@ -1,0 +1,2 @@
+ALTER TABLE public.bot_users
+ADD COLUMN IF NOT EXISTS credits_remaining integer NOT NULL DEFAULT 3;

@@ -1,0 +1,97 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Private Landlord Rentals — design system. All HSL. */
+
+@layer base {
+  :root {
+    --background: 40 30% 97%;
+    --foreground: 150 20% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 150 20% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 150 20% 12%;
+
+    /* Deep forest green — trustworthy, residential */
+    --primary: 155 45% 18%;
+    --primary-foreground: 40 30% 97%;
+
+    /* Warm cream */
+    --secondary: 38 35% 92%;
+    --secondary-foreground: 155 45% 18%;
+
+    --muted: 40 20% 94%;
+    --muted-foreground: 150 10% 38%;
+
+    /* Warm gold accent */
+    --accent: 38 55% 55%;
+    --accent-foreground: 155 45% 12%;
+
+    --destructive: 0 70% 48%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 60% 38%;
+    --success-foreground: 0 0% 100%;
+
+    --border: 40 15% 88%;
+    --input: 40 15% 88%;
+    --ring: 155 45% 25%;
+
+    --radius: 0.75rem;
+
+    --shadow-soft: 0 2px 14px -4px hsl(155 45% 18% / 0.08), 0 1px 3px hsl(155 45% 18% / 0.04);
+    --shadow-elevated: 0 18px 40px -16px hsl(155 45% 18% / 0.18), 0 4px 12px -4px hsl(155 45% 18% / 0.08);
+    --gradient-hero: linear-gradient(135deg, hsl(155 45% 18%), hsl(155 50% 26%));
+    --gradient-warm: linear-gradient(180deg, hsl(40 30% 97%), hsl(38 35% 92%));
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 155 25% 8%;
+    --foreground: 40 30% 95%;
+    --card: 155 25% 11%;
+    --card-foreground: 40 30% 95%;
+    --popover: 155 25% 11%;
+    --popover-foreground: 40 30% 95%;
+    --primary: 40 30% 95%;
+    --primary-foreground: 155 45% 18%;
+    --secondary: 155 20% 16%;
+    --secondary-foreground: 40 30% 95%;
+    --muted: 155 20% 16%;
+    --muted-foreground: 40 10% 65%;
+    --accent: 38 55% 55%;
+    --accent-foreground: 155 45% 12%;
+    --destructive: 0 62% 45%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 155 20% 18%;
+    --input: 155 20% 18%;
+    --ring: 38 55% 55%;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "ss01", "cv11";
+    font-family: ui-serif, "Georgia", "Cambria", "Times New Roman", serif;
+  }
+  h1, h2, h3, h4 {
+    font-family: ui-serif, "Georgia", "Cambria", "Times New Roman", serif;
+    @apply tracking-tight;
+  }
+  .font-sans-ui {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+}
