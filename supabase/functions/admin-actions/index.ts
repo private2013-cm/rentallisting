@@ -182,13 +182,78 @@ Deno.serve(async (req) => {
 
     if (action === "update_listing") {
       const g = requireGroup();
-      // Whitelist updatable fields
-      const allowed = ["address","price","deposit","beds","baths","sqft","bio","description","heading"];
+      const allowed = ["address","price","deposit","beds","baths","sqft","bio","description","heading","application_fee","property_type"];
       const values: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(body.values ?? {})) {
         if (allowed.includes(k)) values[k] = v;
       }
       assertOk(await supabase.from("listings").update(values).eq("id", body.listing_id).eq("link_group_id", g.id), "Update listing failed");
+    }
+    else if (action === "delete_applications") {
+      const ids: string[] = Array.isArray(body.ids) ? body.ids.map(String) : [];
+      if (!ids.length) throw new Error("No applications selected");
+      let q = supabase.from("applications").delete().in("id", ids);
+      if (!auth.isMaster) {
+        const g = requireGroup();
+        q = q.eq("link_group_id", g.id);
+      }
+      assertOk(await q, "Delete applications failed");
+    }
+    else if (action === "find_listings") {
+      const g = requireGroup();
+      const ownerId = Number((g as any).owner_telegram_id);
+      if (!ownerId) throw new Error("This group has no owner Telegram ID.");
+      const { zip, beds, baths, types } = body;
+      const fnRes = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/find-listings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}` },
+        body: JSON.stringify({ owner_telegram_id: ownerId, zip, beds, baths, types }),
+      });
+      const out = await fnRes.json();
+      if (!fnRes.ok) throw new Error(out?.error ?? "Find listings failed");
+      return new Response(JSON.stringify(out), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    else if (action === "import_fetched") {
+      const g = requireGroup();
+      const ids: string[] = Array.isArray(body.ids) ? body.ids.map(String) : [];
+      if (!ids.length) throw new Error("No fetched listings selected");
+      const { data: rows } = await supabase.from("fetched_listings").select("*").in("id", ids);
+      const { count: existingCount } = await supabase.from("listings").select("id", { count: "exact", head: true }).eq("link_group_id", g.id);
+      let pos = existingCount ?? 0;
+      const { data: bioRow } = await supabase.from("app_settings").select("value").eq("key", "default_bio").maybeSingle();
+      const defaultBio = (bioRow?.value as string) ?? "";
+      for (const r of rows ?? []) {
+        const { data: ins } = await supabase.from("listings").insert({
+          link_group_id: g.id, source_url: r.source_url,
+          address: r.address, price: r.price, deposit: null,
+          beds: r.beds, baths: r.baths, sqft: r.sqft,
+          description: r.description, bio: defaultBio,
+          position: pos++,
+        }).select().single();
+        if (ins && Array.isArray(r.photos) && r.photos.length) {
+          const photoRows = (r.photos as string[]).map((u, i) => ({ listing_id: ins.id, url: u, position: i }));
+          await supabase.from("listing_photos").insert(photoRows);
+        }
+        await supabase.from("fetched_listings").update({ status: "imported" }).eq("id", r.id);
+      }
+    }
+    else if (action === "dismiss_fetched") {
+      const ids: string[] = Array.isArray(body.ids) ? body.ids.map(String) : [];
+      if (!ids.length) throw new Error("No fetched listings selected");
+      assertOk(await supabase.from("fetched_listings").update({ status: "dismissed" }).in("id", ids), "Dismiss failed");
+    }
+    else if (action === "resend_links") {
+      const g = requireGroup();
+      const ownerId = Number((g as any).owner_telegram_id);
+      if (!ownerId) throw new Error("No owner");
+      const { data: access } = await supabase.from("admin_access").select("admin_key").eq("link_group_id", g.id).maybeSingle();
+      const { data: pb } = await supabase.from("app_settings").select("value").eq("key", "public_base").maybeSingle();
+      const base = (typeof pb?.value === "string" ? pb.value : "https://rentallisting.lovable.app").replace(/\/+$/, "");
+      const tenantUrl = `${base}/l/${(g as any).slug}`;
+      const adminUrl = `${base}/admin/${(g as any).slug}${access?.admin_key ? `?key=${access.admin_key}` : ""}`;
+      try {
+        await sendMessage(ownerId, `🔗 Updated links for your listings:\n\n👁 Tenant: ${tenantUrl}\n⚙️ Admin: ${adminUrl}`);
+      } catch (e) { console.error("resend failed", e); }
     }
     else if (action === "add_photo") {
       const g = requireGroup();
