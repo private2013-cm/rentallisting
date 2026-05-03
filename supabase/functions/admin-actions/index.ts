@@ -64,6 +64,9 @@ Deno.serve(async (req) => {
       let applications: any[] = [];
       let chatMessages: any[] = [];
       let chatThreads: any[] = [];
+      let fetched: any[] = [];
+      let visitorStats: any = { total: 0, last24h: 0, recent: [] };
+      let scrapeStats: any = { listings_total: 0, links_total: 0, visits_total: 0 };
 
       if (group) {
         const { data } = await supabase
@@ -78,7 +81,18 @@ Deno.serve(async (req) => {
           .order("created_at", { ascending: false }).limit(500);
         applications = apps ?? [];
 
-        // Tenant admin: load their chat thread with super admin
+        const { data: vs } = await supabase
+          .from("visitor_logs").select("*")
+          .eq("link_group_id", group.id)
+          .order("created_at", { ascending: false }).limit(50);
+        visitorStats.recent = vs ?? [];
+        const { count: vTotal } = await supabase.from("visitor_logs").select("id", { count: "exact", head: true }).eq("link_group_id", group.id);
+        const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const { count: v24 } = await supabase.from("visitor_logs").select("id", { count: "exact", head: true }).eq("link_group_id", group.id).gte("created_at", since);
+        visitorStats.total = vTotal ?? 0;
+        visitorStats.last24h = v24 ?? 0;
+
+        // Tenant admin: load their chat thread + fetched listings
         if (!auth.isMaster && (group as any).owner_telegram_id) {
           const tid = (group as any).owner_telegram_id;
           const { data: msgs } = await supabase
@@ -86,10 +100,14 @@ Deno.serve(async (req) => {
             .eq("tenant_telegram_id", tid)
             .order("created_at", { ascending: true }).limit(500);
           chatMessages = msgs ?? [];
-          // mark super messages as read by tenant
           await supabase.from("admin_chat_messages")
             .update({ read_by_tenant: true })
             .eq("tenant_telegram_id", tid).eq("sender", "super").eq("read_by_tenant", false);
+
+          const { data: fl } = await supabase.from("fetched_listings").select("*")
+            .eq("owner_telegram_id", tid).eq("status", "pending")
+            .order("created_at", { ascending: false }).limit(50);
+          fetched = fl ?? [];
         }
       }
       if (auth.isMaster) {
