@@ -208,6 +208,60 @@ export type Database = {
         }
         Relationships: []
       }
+      fetched_listings: {
+        Row: {
+          address: string | null
+          baths: number | null
+          beds: number | null
+          created_at: string
+          description: string | null
+          id: string
+          owner_telegram_id: number
+          photos: Json
+          price: number | null
+          property_type: string | null
+          search_zip: string | null
+          source: string | null
+          source_url: string
+          sqft: number | null
+          status: string
+        }
+        Insert: {
+          address?: string | null
+          baths?: number | null
+          beds?: number | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          owner_telegram_id: number
+          photos?: Json
+          price?: number | null
+          property_type?: string | null
+          search_zip?: string | null
+          source?: string | null
+          source_url: string
+          sqft?: number | null
+          status?: string
+        }
+        Update: {
+          address?: string | null
+          baths?: number | null
+          beds?: number | null
+          created_at?: string
+          description?: string | null
+          id?: string
+          owner_telegram_id?: number
+          photos?: Json
+          price?: number | null
+          property_type?: string | null
+          search_zip?: string | null
+          source?: string | null
+          source_url?: string
+          sqft?: number | null
+          status?: string
+        }
+        Relationships: []
+      }
       link_groups: {
         Row: {
           created_at: string
@@ -299,6 +353,7 @@ export type Database = {
       listings: {
         Row: {
           address: string | null
+          application_fee: number | null
           baths: number | null
           beds: number | null
           bio: string | null
@@ -310,12 +365,14 @@ export type Database = {
           link_group_id: string
           position: number
           price: number | null
+          property_type: string | null
           source_url: string
           sqft: number | null
           updated_at: string
         }
         Insert: {
           address?: string | null
+          application_fee?: number | null
           baths?: number | null
           beds?: number | null
           bio?: string | null
@@ -327,12 +384,14 @@ export type Database = {
           link_group_id: string
           position?: number
           price?: number | null
+          property_type?: string | null
           source_url: string
           sqft?: number | null
           updated_at?: string
         }
         Update: {
           address?: string | null
+          application_fee?: number | null
           baths?: number | null
           beds?: number | null
           bio?: string | null
@@ -344,6 +403,7 @@ export type Database = {
           link_group_id?: string
           position?: number
           price?: number | null
+          property_type?: string | null
           source_url?: string
           sqft?: number | null
           updated_at?: string
@@ -357,6 +417,54 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      visitor_logs: {
+        Row: {
+          browser: string | null
+          city: string | null
+          country: string | null
+          created_at: string
+          device: string | null
+          id: string
+          ip: string | null
+          link_group_id: string | null
+          os: string | null
+          referrer: string | null
+          region: string | null
+          slug: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          browser?: string | null
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          device?: string | null
+          id?: string
+          ip?: string | null
+          link_group_id?: string | null
+          os?: string | null
+          referrer?: string | null
+          region?: string | null
+          slug?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          browser?: string | null
+          city?: string | null
+          country?: string | null
+          created_at?: string
+          device?: string | null
+          id?: string
+          ip?: string | null
+          link_group_id?: string | null
+          os?: string | null
+          referrer?: string | null
+          region?: string | null
+          slug?: string | null
+          user_agent?: string | null
+        }
+        Relationships: []
       }
     }
     Views: {

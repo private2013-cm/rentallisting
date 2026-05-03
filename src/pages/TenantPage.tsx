@@ -20,6 +20,7 @@ type Listing = {
   description: string | null;
   bio: string | null;
   heading: string | null;
+  application_fee: number | null;
 };
 type Photo = { id: string; url: string; is_hidden: boolean; position: number };
 
@@ -45,9 +46,12 @@ const TenantPage = () => {
 
       const { data: rows } = await supabase
         .from("listings")
-        .select("id, address, price, deposit, beds, baths, sqft, description, bio, heading, position, listing_photos(id, url, is_hidden, position)")
+        .select("id, address, price, deposit, beds, baths, sqft, description, bio, heading, application_fee, position, listing_photos(id, url, is_hidden, position)")
         .eq("link_group_id", group.id)
         .order("position");
+
+      // Log visit (fire and forget)
+      supabase.functions.invoke("log-visit", { body: { slug, referrer: document.referrer } }).catch(() => {});
 
       const items = (rows ?? []).map((r: any) => ({
         ...r,
@@ -182,6 +186,12 @@ function ListingCard({ listing, fallbackHeading, showHeading }: { listing: Listi
             <p className="font-sans-ui text-xs uppercase tracking-wider text-muted-foreground">Deposit</p>
             <p className="text-2xl font-semibold text-foreground">{listing.deposit ? `$${listing.deposit.toLocaleString()}` : "—"}</p>
           </div>
+          {listing.application_fee != null && (
+            <div>
+              <p className="font-sans-ui text-xs uppercase tracking-wider text-muted-foreground">Application fee</p>
+              <p className="text-2xl font-semibold text-foreground">${Number(listing.application_fee).toLocaleString()}</p>
+            </div>
+          )}
         </div>
 
         {listing.bio && (
