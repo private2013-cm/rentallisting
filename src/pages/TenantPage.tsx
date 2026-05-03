@@ -20,6 +20,7 @@ type Listing = {
   description: string | null;
   bio: string | null;
   heading: string | null;
+  application_fee: number | null;
 };
 type Photo = { id: string; url: string; is_hidden: boolean; position: number };
 
