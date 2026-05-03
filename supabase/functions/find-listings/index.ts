@@ -1,0 +1,63 @@
+// "Find listings for me" — searches Zillow + Redfin by zip/beds/baths/type,
+// scrapes each, and saves into fetched_listings for the owner to review.
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { corsHeaders } from "../_shared/cors.ts";
+import { searchRentals, scrapeListing, detectSource } from "../_shared/scraper.ts";
+
+const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+
+function bedsMatch(target: string, actual: number | null): boolean {
+  if (target === "any" || actual == null) return true;
+  if (target.endsWith("+")) return actual >= Number(target.slice(0, -1));
+  return Math.floor(actual) === Number(target);
+}
+function bathsMatch(target: string, actual: number | null): boolean {
+  if (target === "any" || actual == null) return true;
+  if (target.endsWith("+")) return actual >= Number(target.slice(0, -1));
+  return Number(actual) === Number(target);
+}
+function typeMatch(targets: string[], actual: string | null): boolean {
+  if (!targets.length || targets.includes("any")) return true;
+  if (!actual) return true;
+  return targets.includes(actual);
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+  try {
+    const { owner_telegram_id, zip, beds, baths, types, limit } = await req.json();
+    if (!owner_telegram_id || !zip) {
+      return new Response(JSON.stringify({ error: "missing owner_telegram_id or zip" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    const max = Math.min(Math.max(Number(limit ?? 8), 1), 12);
+
+    const urls = await searchRentals({ zip: String(zip), beds: String(beds ?? "any"), baths: String(baths ?? "any"), types: Array.isArray(types) ? types : ["any"], limit: max });
+    if (!urls.length) {
+      return new Response(JSON.stringify({ ok: true, fetched: 0, message: "No matches found." }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // Scrape in parallel for speed (cap concurrency)
+    const results = await Promise.all(urls.map(u => scrapeListing(u).catch(() => null)));
+
+    const inserts: any[] = [];
+    for (const r of results) {
+      if (!r) continue;
+      if (!bedsMatch(String(beds ?? "any"), r.beds)) continue;
+      if (!bathsMatch(String(baths ?? "any"), r.baths)) continue;
+      if (!typeMatch(Array.isArray(types) ? types : ["any"], r.property_type)) continue;
+      inserts.push({
+        owner_telegram_id: Number(owner_telegram_id),
+        source_url: r.source_url, source: r.source,
+        address: r.address, price: r.price, beds: r.beds, baths: r.baths, sqft: r.sqft,
+        property_type: r.property_type, description: r.description,
+        photos: r.photos, search_zip: String(zip), status: "pending",
+      });
+    }
+    if (inserts.length) {
+      await supabase.from("fetched_listings").insert(inserts);
+    }
+    return new Response(JSON.stringify({ ok: true, fetched: inserts.length, scanned: urls.length }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: (e as Error).message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  }
+});
