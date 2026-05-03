@@ -43,9 +43,11 @@ Deno.serve(async (req) => {
     const group = auth.group;
 
     if (action === "load") {
-      const [headingRow, bioRow, interestsRes] = await Promise.all([
+      const [headingRow, bioRow, descRow, feeRow, interestsRes] = await Promise.all([
         supabase.from("app_settings").select("value").eq("key", "tenant_heading").maybeSingle(),
         supabase.from("app_settings").select("value").eq("key", "default_bio").maybeSingle(),
+        supabase.from("app_settings").select("value").eq("key", "default_description").maybeSingle(),
+        supabase.from("app_settings").select("value").eq("key", "default_application_fee").maybeSingle(),
         supabase.from("listing_interests").select("listing_id, is_interested"),
       ]);
 
