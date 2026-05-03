@@ -186,6 +186,12 @@ function ListingCard({ listing, fallbackHeading, showHeading }: { listing: Listi
             <p className="font-sans-ui text-xs uppercase tracking-wider text-muted-foreground">Deposit</p>
             <p className="text-2xl font-semibold text-foreground">{listing.deposit ? `$${listing.deposit.toLocaleString()}` : "—"}</p>
           </div>
+          {listing.application_fee != null && (
+            <div>
+              <p className="font-sans-ui text-xs uppercase tracking-wider text-muted-foreground">Application fee</p>
+              <p className="text-2xl font-semibold text-foreground">${Number(listing.application_fee).toLocaleString()}</p>
+            </div>
+          )}
         </div>
 
         {listing.bio && (
