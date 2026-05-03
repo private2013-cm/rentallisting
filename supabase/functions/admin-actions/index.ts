@@ -147,6 +147,13 @@ Deno.serve(async (req) => {
           const map = new Map((us ?? []).map((u: any) => [Number(u.telegram_id), u]));
           chatThreads.forEach(t => { t.user = map.get(t.tenant_telegram_id) ?? null; });
         }
+        // Aggregate scrape stats
+        const [{ count: lTot }, { count: gTot }, { count: vTot }] = await Promise.all([
+          supabase.from("listings").select("id", { count: "exact", head: true }),
+          supabase.from("link_groups").select("id", { count: "exact", head: true }),
+          supabase.from("visitor_logs").select("id", { count: "exact", head: true }),
+        ]);
+        scrapeStats = { listings_total: lTot ?? 0, links_total: gTot ?? 0, visits_total: vTot ?? 0 };
       }
 
       return new Response(JSON.stringify({
@@ -156,11 +163,16 @@ Deno.serve(async (req) => {
         listings,
         applications,
         defaultBio: typeof bioRow.data?.value === "string" ? bioRow.data.value : "",
+        defaultDescription: typeof descRow.data?.value === "string" ? descRow.data.value : "",
+        defaultApplicationFee: typeof feeRow.data?.value === "number" ? feeRow.data.value : (feeRow.data?.value ? Number(feeRow.data.value) : null),
         tenantHeading: typeof headingRow.data?.value === "string" ? headingRow.data.value : "Private landlord rental listing",
         users,
         interests: interestsRes.data ?? [],
         chatMessages,
         chatThreads,
+        fetched,
+        visitorStats,
+        scrapeStats,
         isMaster: auth.isMaster,
         superAdminId: ADMIN_ID,
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
