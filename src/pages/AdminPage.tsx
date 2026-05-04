@@ -78,11 +78,16 @@ const AdminPage = () => {
       }));
       setListings(items);
       setDefaultBio(data.defaultBio ?? "");
+      setDefaultDescription(data.defaultDescription ?? "");
+      setDefaultApplicationFee(data.defaultApplicationFee != null ? String(data.defaultApplicationFee) : "");
       setTenantHeading(data.tenantHeading ?? "Private landlord rental listing");
       setUsers(data.users ?? []);
       setApplications(data.applications ?? []);
       setChatMessages(data.chatMessages ?? []);
       setChatThreads(data.chatThreads ?? []);
+      setFetched(data.fetched ?? []);
+      setVisitorStats(data.visitorStats ?? { total: 0, last24h: 0, recent: [] });
+      setScrapeStats(data.scrapeStats ?? { listings_total: 0, links_total: 0, visits_total: 0 });
       const ids = new Set(items.map((l: any) => l.id));
       const counts: Record<string, { yes: number; no: number }> = {};
       (data.interests ?? []).forEach((i: any) => {
