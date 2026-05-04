@@ -246,6 +246,45 @@ async function showFieldMenu(chatId: number, listingId: string) {
   });
 }
 
+type FindFilters = { zip: string; beds: string; baths: string; types: string[] };
+
+function findKeyboard(f: FindFilters) {
+  const opt = (val: string, cur: string) => (val === cur ? `✅ ${val}` : val);
+  const typeOpt = (val: string) => (f.types.includes(val) ? `✅ ${val}` : val);
+  return {
+    inline_keyboard: [
+      [{ text: `Beds: ${f.beds}`, callback_data: "noop" }],
+      [
+        { text: opt("any", f.beds), callback_data: "find:beds:any" },
+        { text: opt("1", f.beds), callback_data: "find:beds:1" },
+        { text: opt("2", f.beds), callback_data: "find:beds:2" },
+        { text: opt("3", f.beds), callback_data: "find:beds:3" },
+        { text: opt("3+", f.beds), callback_data: "find:beds:3+" },
+      ],
+      [{ text: `Baths: ${f.baths}`, callback_data: "noop" }],
+      [
+        { text: opt("any", f.baths), callback_data: "find:baths:any" },
+        { text: opt("1", f.baths), callback_data: "find:baths:1" },
+        { text: opt("1.5", f.baths), callback_data: "find:baths:1.5" },
+        { text: opt("2", f.baths), callback_data: "find:baths:2" },
+        { text: opt("2+", f.baths), callback_data: "find:baths:2+" },
+      ],
+      [{ text: `Type: ${f.types.join(", ")}`, callback_data: "noop" }],
+      [
+        { text: typeOpt("any"), callback_data: "find:type:any" },
+        { text: typeOpt("house"), callback_data: "find:type:house" },
+        { text: typeOpt("apartment"), callback_data: "find:type:apartment" },
+        { text: typeOpt("condo"), callback_data: "find:type:condo" },
+      ],
+      [{ text: `🔎 Search ZIP ${f.zip}`, callback_data: "find:go" }, { text: "❌ Cancel", callback_data: "find:cancel" }],
+    ],
+  };
+}
+
+async function sendFindMenu(chatId: number, f: FindFilters) {
+  await sendMessage(chatId, `🔎 <b>Find listings in ${f.zip}</b>\n\nPick filters then tap <b>Search</b>:`, { reply_markup: findKeyboard(f) });
+}
+
 async function handleUpdate(update: any, req: Request) {
   // Callback queries (inline buttons)
   if (update.callback_query) {
