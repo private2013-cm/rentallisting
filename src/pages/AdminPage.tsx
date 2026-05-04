@@ -34,12 +34,17 @@ const AdminPage = () => {
   const [groups, setGroups] = useState<Group[]>([]);
   const [listings, setListings] = useState<(Listing & { photos: Photo[] })[]>([]);
   const [defaultBio, setDefaultBio] = useState("");
+  const [defaultDescription, setDefaultDescription] = useState("");
+  const [defaultApplicationFee, setDefaultApplicationFee] = useState<string>("");
   const [tenantHeading, setTenantHeading] = useState("Private landlord rental listing");
   const [users, setUsers] = useState<BotUser[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
   const [interestCounts, setInterestCounts] = useState<Record<string, { yes: number; no: number }>>({});
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatThreads, setChatThreads] = useState<ChatThread[]>([]);
+  const [fetched, setFetched] = useState<Fetched[]>([]);
+  const [visitorStats, setVisitorStats] = useState<VisitorStats>({ total: 0, last24h: 0, recent: [] });
+  const [scrapeStats, setScrapeStats] = useState<{ listings_total: number; links_total: number; visits_total: number }>({ listings_total: 0, links_total: 0, visits_total: 0 });
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState("");
   const [forbidden, setForbidden] = useState(false);
