@@ -8,13 +8,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Sparkles, ExternalLink, Eye, EyeOff, Save, Send, Users, Trash2, Heart, X, Inbox, MessageSquare, Megaphone } from "lucide-react";
+import { Sparkles, ExternalLink, Eye, EyeOff, Save, Send, Users, Trash2, Heart, X, Inbox, MessageSquare, Megaphone, Search, BarChart3, Globe, MapPin } from "lucide-react";
 import { toast } from "sonner";
 
 type Listing = {
   id: string; address: string | null; price: number | null; deposit: number | null;
   beds: number | null; baths: number | null; sqft: number | null;
   description: string | null; bio: string | null; heading: string | null; source_url: string;
+  application_fee: number | null; property_type: string | null;
   link_group_id?: string;
 };
 type Photo = { id: string; url: string; is_hidden: boolean; position: number };
@@ -23,6 +24,9 @@ type Group = { id: string; slug: string; title: string | null; created_at: strin
 type Application = { id: string; listing_id: string | null; link_group_id: string | null; data: Record<string, string>; created_at: string };
 type ChatMessage = { id: string; tenant_telegram_id: number; sender: "super" | "tenant"; body: string; created_at: string; read_by_super: boolean; read_by_tenant: boolean };
 type ChatThread = { tenant_telegram_id: number; messages: ChatMessage[]; unread: number; user: { telegram_id: number; username: string | null; first_name: string | null; last_name: string | null } | null };
+type Fetched = { id: string; source: string | null; source_url: string; address: string | null; price: number | null; beds: number | null; baths: number | null; sqft: number | null; property_type: string | null; description: string | null; photos: string[]; search_zip: string | null; status: string; created_at: string };
+type VisitorLog = { id: string; ip: string | null; city: string | null; region: string | null; country: string | null; device: string | null; browser: string | null; os: string | null; referrer: string | null; slug: string | null; created_at: string };
+type VisitorStats = { total: number; last24h: number; recent: VisitorLog[] };
 
 const AdminPage = () => {
   const { slug } = useParams();
