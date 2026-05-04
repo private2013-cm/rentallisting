@@ -635,7 +635,16 @@ async function handleUpdate(update: any, req: Request) {
     return;
   }
 
-  if (state?.state === "awaiting_link") {
+  // Find listings flow — collect zip then show filter menu
+  if (state?.state === "find_zip") {
+    const zip = text.trim().match(/^\d{5}$/)?.[0];
+    if (!zip) { await sendMessage(chatId, "⚠️ Send a 5-digit ZIP code, or /cancel."); return; }
+    await setState(stateId, "find_filters", { zip, beds: "any", baths: "any", types: ["any"] });
+    await sendFindMenu(chatId, { zip, beds: "any", baths: "any", types: ["any"] });
+    return;
+  }
+
+
     if (groupChat && !(await isTelegramChatAdmin(chatId, fromId))) {
       await sendMessage(chatId, "🔒 Only Telegram group admins can add listings to this group link.");
       return;
