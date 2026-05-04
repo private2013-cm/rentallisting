@@ -331,6 +331,12 @@ const AdminPage = () => {
           )}
 
           {isMaster && (
+            <TabsContent value="users" className="mt-6">
+              <UsersPanel users={users} reload={load} adminAction={adminAction} />
+            </TabsContent>
+          )}
+
+          {isMaster && (
             <TabsContent value="ai" className="mt-6">
               <AIAssistant context={{ listings, slug }} reload={load} />
             </TabsContent>
