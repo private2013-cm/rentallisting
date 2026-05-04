@@ -364,6 +364,48 @@ async function handleUpdate(update: any, req: Request) {
       await showListingPicker(chatId, fromId);
       return;
     }
+    if (data.startsWith("find:")) {
+      const st = await getState(stateId);
+      const f: FindFilters = (st?.data as any) ?? { zip: "", beds: "any", baths: "any", types: ["any"] };
+      const [, kind, val] = data.split(":");
+      if (kind === "cancel") { await clearState(stateId); await sendMessage(chatId, "Cancelled."); return; }
+      if (kind === "go") {
+        if (!f.zip) { await sendMessage(chatId, "Send /find again."); return; }
+        await sendMessage(chatId, `🔎 Searching ZIP <b>${f.zip}</b>… this may take ~30s.`);
+        try {
+          const res = await fetch(`${SUPABASE_URL}/functions/v1/find-listings`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE_KEY}` },
+            body: JSON.stringify({ owner_telegram_id: fromId, zip: f.zip, beds: f.beds, baths: f.baths, types: f.types, limit: 8 }),
+          });
+          const out = await res.json();
+          if (!res.ok) throw new Error(out?.error ?? "Search failed");
+          const base = await publicBase(req);
+          const { data: grp } = await supabase.from("link_groups").select("slug").eq("owner_telegram_id", fromId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+          const reviewUrl = grp ? `${base}/admin/${grp.slug}` : `${base}/admin`;
+          await sendMessage(chatId, `✅ Found <b>${out.fetched ?? 0}</b> listing(s) (scanned ${out.scanned ?? 0}).\n\nReview & import them on the <a href="${reviewUrl}">admin page → Find listings</a>.`);
+        } catch (e) {
+          await sendMessage(chatId, `❌ ${(e as Error).message}`);
+        }
+        await clearState(stateId);
+        return;
+      }
+      if (kind === "beds") f.beds = val;
+      else if (kind === "baths") f.baths = val;
+      else if (kind === "type") {
+        if (val === "any") f.types = ["any"];
+        else {
+          const cur = new Set(f.types.filter(t => t !== "any"));
+          if (cur.has(val)) cur.delete(val); else cur.add(val);
+          f.types = cur.size ? Array.from(cur) : ["any"];
+        }
+      }
+      await setState(stateId, "find_filters", f as unknown as Record<string, unknown>);
+      try {
+        await tg("editMessageReplyMarkup", { chat_id: chatId, message_id: cb.message?.message_id, reply_markup: findKeyboard(f) });
+      } catch (_) {}
+      return;
+    }
     if (fromId === ADMIN_ID && data.startsWith("chatreply:")) {
       const targetId = Number(data.split(":")[1]);
       await setState(ADMIN_ID, "replying_to_tenant", { target_id: targetId });
