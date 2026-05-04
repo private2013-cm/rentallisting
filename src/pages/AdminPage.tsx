@@ -235,8 +235,20 @@ const AdminPage = () => {
             </TabsContent>
           )}
 
+          {!isMaster && (
+            <TabsContent value="find" className="mt-6">
+              <FindListingsPanel fetched={fetched} adminAction={adminAction} reload={load} />
+            </TabsContent>
+          )}
+
+          {!isMaster && (
+            <TabsContent value="visitors" className="mt-6">
+              <VisitorsPanel stats={visitorStats} />
+            </TabsContent>
+          )}
+
           <TabsContent value="applications" className="mt-6">
-            <ApplicationsPanel applications={applications} listingNameById={listingNameById} isMaster={isMaster} groups={groups} />
+            <ApplicationsPanel applications={applications} listingNameById={listingNameById} isMaster={isMaster} groups={groups} adminAction={adminAction} reload={load} />
           </TabsContent>
 
           <TabsContent value="chat" className="mt-6">
