@@ -7,18 +7,19 @@ import { draftFromUrl, scrapeZillow } from "../_shared/zillow.ts";
 // Persistent reply keyboard shown to allowed users
 const userKeyboard = {
   keyboard: [
-    [{ text: "🏠 New listing link" }, { text: "📝 Edit my listings" }],
-    [{ text: "💬 Message admin" }, { text: "🪙 My credits" }],
-    [{ text: "❓ Help" }],
+    [{ text: "🏠 New listing link" }, { text: "🔎 Find listings" }],
+    [{ text: "📝 Edit my listings" }, { text: "💬 Message admin" }],
+    [{ text: "🪙 My credits" }, { text: "❓ Help" }],
   ],
   resize_keyboard: true,
   is_persistent: true,
 };
 const adminKeyboard = {
   keyboard: [
-    [{ text: "🏠 New listing link" }, { text: "📝 Edit my listings" }],
-    [{ text: "👥 Users" }, { text: "🛡 Master admin" }],
-    [{ text: "📣 Broadcast" }, { text: "❓ Help" }],
+    [{ text: "🏠 New listing link" }, { text: "🔎 Find listings" }],
+    [{ text: "📝 Edit my listings" }, { text: "👥 Users" }],
+    [{ text: "🛡 Master admin" }, { text: "📣 Broadcast" }],
+    [{ text: "❓ Help" }],
   ],
   resize_keyboard: true,
   is_persistent: true,
