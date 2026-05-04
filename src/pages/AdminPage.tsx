@@ -178,17 +178,26 @@ const AdminPage = () => {
       </header>
 
       <div className="max-w-6xl mx-auto px-6 py-8">
-        <Tabs defaultValue={isMaster ? "groups" : "listings"}>
+        <Tabs defaultValue={isMaster ? "overview" : "listings"}>
           <TabsList className="font-sans-ui flex-wrap h-auto">
+            {isMaster && <TabsTrigger value="overview"><BarChart3 className="w-3.5 h-3.5 mr-1.5" />Overview</TabsTrigger>}
             {isMaster && <TabsTrigger value="groups">Listing groups</TabsTrigger>}
             {!isMaster && <TabsTrigger value="listings">Listings</TabsTrigger>}
+            {!isMaster && <TabsTrigger value="find"><Search className="w-3.5 h-3.5 mr-1.5" />Find listings{fetched.length > 0 && <span className="ml-1.5 text-xs bg-accent/30 px-1.5 rounded">{fetched.length}</span>}</TabsTrigger>}
             <TabsTrigger value="applications"><Inbox className="w-3.5 h-3.5 mr-1.5" />Applications{applications.length > 0 && <span className="ml-1.5 text-xs bg-accent/30 px-1.5 rounded">{applications.length}</span>}</TabsTrigger>
+            {!isMaster && <TabsTrigger value="visitors"><Globe className="w-3.5 h-3.5 mr-1.5" />Visitors{visitorStats.total > 0 && <span className="ml-1.5 text-xs bg-accent/30 px-1.5 rounded">{visitorStats.total}</span>}</TabsTrigger>}
             <TabsTrigger value="chat"><MessageSquare className="w-3.5 h-3.5 mr-1.5" />Chat{totalChatUnread > 0 && <span className="ml-1.5 text-xs bg-destructive text-destructive-foreground px-1.5 rounded-full">{totalChatUnread}</span>}</TabsTrigger>
             {isMaster && <TabsTrigger value="broadcast"><Megaphone className="w-3.5 h-3.5 mr-1.5" />Broadcast</TabsTrigger>}
             {isMaster && <TabsTrigger value="settings">Defaults</TabsTrigger>}
             {isMaster && <TabsTrigger value="users"><Users className="w-3.5 h-3.5 mr-1.5" />Users</TabsTrigger>}
             {isMaster && <TabsTrigger value="ai"><Sparkles className="w-3.5 h-3.5 mr-1.5" />AI assistant</TabsTrigger>}
           </TabsList>
+
+          {isMaster && (
+            <TabsContent value="overview" className="mt-6">
+              <OverviewPanel groups={groups} users={users} applications={applications} chatThreads={chatThreads} scrapeStats={scrapeStats} />
+            </TabsContent>
+          )}
 
           {isMaster && (
             <TabsContent value="groups" className="mt-6">
