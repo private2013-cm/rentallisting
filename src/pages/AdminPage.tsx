@@ -637,19 +637,19 @@ function AIAssistant({ context, reload }: { context: any; reload: () => void }) 
         ))}
         {loading && <div className="text-sm text-muted-foreground italic">Thinking…</div>}
       </div>
-      <div className="flex gap-2">
+      <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); send(); }}>
         <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") send(); }}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
           placeholder="Tell me what to change…"
           className="font-sans-ui"
           disabled={loading}
         />
-        <Button onClick={send} disabled={loading || !input.trim()} className="bg-primary hover:bg-primary/90">
+        <Button type="submit" disabled={loading || !input.trim()} className="bg-primary hover:bg-primary/90">
           <Send className="w-4 h-4" />
         </Button>
-      </div>
+      </form>
     </Card>
   );
 }
