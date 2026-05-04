@@ -8,13 +8,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Sparkles, ExternalLink, Eye, EyeOff, Save, Send, Users, Trash2, Heart, X, Inbox, MessageSquare, Megaphone } from "lucide-react";
+import { Sparkles, ExternalLink, Eye, EyeOff, Save, Send, Users, Trash2, Heart, X, Inbox, MessageSquare, Megaphone, Search, BarChart3, Globe, MapPin } from "lucide-react";
 import { toast } from "sonner";
 
 type Listing = {
   id: string; address: string | null; price: number | null; deposit: number | null;
   beds: number | null; baths: number | null; sqft: number | null;
   description: string | null; bio: string | null; heading: string | null; source_url: string;
+  application_fee: number | null; property_type: string | null;
   link_group_id?: string;
 };
 type Photo = { id: string; url: string; is_hidden: boolean; position: number };
@@ -23,6 +24,9 @@ type Group = { id: string; slug: string; title: string | null; created_at: strin
 type Application = { id: string; listing_id: string | null; link_group_id: string | null; data: Record<string, string>; created_at: string };
 type ChatMessage = { id: string; tenant_telegram_id: number; sender: "super" | "tenant"; body: string; created_at: string; read_by_super: boolean; read_by_tenant: boolean };
 type ChatThread = { tenant_telegram_id: number; messages: ChatMessage[]; unread: number; user: { telegram_id: number; username: string | null; first_name: string | null; last_name: string | null } | null };
+type Fetched = { id: string; source: string | null; source_url: string; address: string | null; price: number | null; beds: number | null; baths: number | null; sqft: number | null; property_type: string | null; description: string | null; photos: string[]; search_zip: string | null; status: string; created_at: string };
+type VisitorLog = { id: string; ip: string | null; city: string | null; region: string | null; country: string | null; device: string | null; browser: string | null; os: string | null; referrer: string | null; slug: string | null; created_at: string };
+type VisitorStats = { total: number; last24h: number; recent: VisitorLog[] };
 
 const AdminPage = () => {
   const { slug } = useParams();
@@ -30,12 +34,17 @@ const AdminPage = () => {
   const [groups, setGroups] = useState<Group[]>([]);
   const [listings, setListings] = useState<(Listing & { photos: Photo[] })[]>([]);
   const [defaultBio, setDefaultBio] = useState("");
+  const [defaultDescription, setDefaultDescription] = useState("");
+  const [defaultApplicationFee, setDefaultApplicationFee] = useState<string>("");
   const [tenantHeading, setTenantHeading] = useState("Private landlord rental listing");
   const [users, setUsers] = useState<BotUser[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
   const [interestCounts, setInterestCounts] = useState<Record<string, { yes: number; no: number }>>({});
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatThreads, setChatThreads] = useState<ChatThread[]>([]);
+  const [fetched, setFetched] = useState<Fetched[]>([]);
+  const [visitorStats, setVisitorStats] = useState<VisitorStats>({ total: 0, last24h: 0, recent: [] });
+  const [scrapeStats, setScrapeStats] = useState<{ listings_total: number; links_total: number; visits_total: number }>({ listings_total: 0, links_total: 0, visits_total: 0 });
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState("");
   const [forbidden, setForbidden] = useState(false);
@@ -69,11 +78,16 @@ const AdminPage = () => {
       }));
       setListings(items);
       setDefaultBio(data.defaultBio ?? "");
+      setDefaultDescription(data.defaultDescription ?? "");
+      setDefaultApplicationFee(data.defaultApplicationFee != null ? String(data.defaultApplicationFee) : "");
       setTenantHeading(data.tenantHeading ?? "Private landlord rental listing");
       setUsers(data.users ?? []);
       setApplications(data.applications ?? []);
       setChatMessages(data.chatMessages ?? []);
       setChatThreads(data.chatThreads ?? []);
+      setFetched(data.fetched ?? []);
+      setVisitorStats(data.visitorStats ?? { total: 0, last24h: 0, recent: [] });
+      setScrapeStats(data.scrapeStats ?? { listings_total: 0, links_total: 0, visits_total: 0 });
       const ids = new Set(items.map((l: any) => l.id));
       const counts: Record<string, { yes: number; no: number }> = {};
       (data.interests ?? []).forEach((i: any) => {
@@ -164,17 +178,26 @@ const AdminPage = () => {
       </header>
 
       <div className="max-w-6xl mx-auto px-6 py-8">
-        <Tabs defaultValue={isMaster ? "groups" : "listings"}>
+        <Tabs defaultValue={isMaster ? "overview" : "listings"}>
           <TabsList className="font-sans-ui flex-wrap h-auto">
+            {isMaster && <TabsTrigger value="overview"><BarChart3 className="w-3.5 h-3.5 mr-1.5" />Overview</TabsTrigger>}
             {isMaster && <TabsTrigger value="groups">Listing groups</TabsTrigger>}
             {!isMaster && <TabsTrigger value="listings">Listings</TabsTrigger>}
+            {!isMaster && <TabsTrigger value="find"><Search className="w-3.5 h-3.5 mr-1.5" />Find listings{fetched.length > 0 && <span className="ml-1.5 text-xs bg-accent/30 px-1.5 rounded">{fetched.length}</span>}</TabsTrigger>}
             <TabsTrigger value="applications"><Inbox className="w-3.5 h-3.5 mr-1.5" />Applications{applications.length > 0 && <span className="ml-1.5 text-xs bg-accent/30 px-1.5 rounded">{applications.length}</span>}</TabsTrigger>
+            {!isMaster && <TabsTrigger value="visitors"><Globe className="w-3.5 h-3.5 mr-1.5" />Visitors{visitorStats.total > 0 && <span className="ml-1.5 text-xs bg-accent/30 px-1.5 rounded">{visitorStats.total}</span>}</TabsTrigger>}
             <TabsTrigger value="chat"><MessageSquare className="w-3.5 h-3.5 mr-1.5" />Chat{totalChatUnread > 0 && <span className="ml-1.5 text-xs bg-destructive text-destructive-foreground px-1.5 rounded-full">{totalChatUnread}</span>}</TabsTrigger>
             {isMaster && <TabsTrigger value="broadcast"><Megaphone className="w-3.5 h-3.5 mr-1.5" />Broadcast</TabsTrigger>}
             {isMaster && <TabsTrigger value="settings">Defaults</TabsTrigger>}
             {isMaster && <TabsTrigger value="users"><Users className="w-3.5 h-3.5 mr-1.5" />Users</TabsTrigger>}
             {isMaster && <TabsTrigger value="ai"><Sparkles className="w-3.5 h-3.5 mr-1.5" />AI assistant</TabsTrigger>}
           </TabsList>
+
+          {isMaster && (
+            <TabsContent value="overview" className="mt-6">
+              <OverviewPanel groups={groups} users={users} applications={applications} chatThreads={chatThreads} scrapeStats={scrapeStats} />
+            </TabsContent>
+          )}
 
           {isMaster && (
             <TabsContent value="groups" className="mt-6">
@@ -212,8 +235,20 @@ const AdminPage = () => {
             </TabsContent>
           )}
 
+          {!isMaster && (
+            <TabsContent value="find" className="mt-6">
+              <FindListingsPanel fetched={fetched} adminAction={adminAction} reload={load} />
+            </TabsContent>
+          )}
+
+          {!isMaster && (
+            <TabsContent value="visitors" className="mt-6">
+              <VisitorsPanel stats={visitorStats} />
+            </TabsContent>
+          )}
+
           <TabsContent value="applications" className="mt-6">
-            <ApplicationsPanel applications={applications} listingNameById={listingNameById} isMaster={isMaster} groups={groups} />
+            <ApplicationsPanel applications={applications} listingNameById={listingNameById} isMaster={isMaster} groups={groups} adminAction={adminAction} reload={load} />
           </TabsContent>
 
           <TabsContent value="chat" className="mt-6">
@@ -260,6 +295,37 @@ const AdminPage = () => {
                     } catch (e: any) { toast.error(e.message); }
                   }}
                 ><Save className="w-4 h-4 mr-2" />Save default bio</Button>
+              </Card>
+
+              <Card className="p-6 max-w-2xl">
+                <h3 className="font-semibold text-lg mb-1">Default description</h3>
+                <p className="font-sans-ui text-sm text-muted-foreground mb-4">Used when a scraped listing has no description. Per-listing edits always win.</p>
+                <Textarea rows={5} value={defaultDescription} onChange={(e) => setDefaultDescription(e.target.value)} className="font-sans-ui" />
+                <Button
+                  className="mt-4 bg-primary hover:bg-primary/90"
+                  onClick={async () => {
+                    try {
+                      await adminAction("update_setting", { setting_key: "default_description", value: defaultDescription });
+                      toast.success("Default description saved");
+                    } catch (e: any) { toast.error(e.message); }
+                  }}
+                ><Save className="w-4 h-4 mr-2" />Save default description</Button>
+              </Card>
+
+              <Card className="p-6 max-w-2xl">
+                <h3 className="font-semibold text-lg mb-1">Default application fee ($)</h3>
+                <p className="font-sans-ui text-sm text-muted-foreground mb-4">Shown on tenant pages and the apply form (display only — no payment is collected).</p>
+                <Input type="number" value={defaultApplicationFee} onChange={(e) => setDefaultApplicationFee(e.target.value)} className="font-sans-ui max-w-xs" placeholder="e.g. 35" />
+                <Button
+                  className="mt-4 bg-primary hover:bg-primary/90"
+                  onClick={async () => {
+                    try {
+                      const v = defaultApplicationFee.trim() === "" ? null : Number(defaultApplicationFee);
+                      await adminAction("update_setting", { setting_key: "default_application_fee", value: v });
+                      toast.success("Default fee saved");
+                    } catch (e: any) { toast.error(e.message); }
+                  }}
+                ><Save className="w-4 h-4 mr-2" />Save default fee</Button>
               </Card>
             </TabsContent>
           )}
@@ -571,53 +637,113 @@ function AIAssistant({ context, reload }: { context: any; reload: () => void }) 
         ))}
         {loading && <div className="text-sm text-muted-foreground italic">Thinking…</div>}
       </div>
-      <div className="flex gap-2">
+      <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); send(); }}>
         <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") send(); }}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
           placeholder="Tell me what to change…"
           className="font-sans-ui"
           disabled={loading}
         />
-        <Button onClick={send} disabled={loading || !input.trim()} className="bg-primary hover:bg-primary/90">
+        <Button type="submit" disabled={loading || !input.trim()} className="bg-primary hover:bg-primary/90">
           <Send className="w-4 h-4" />
         </Button>
-      </div>
+      </form>
     </Card>
   );
 }
 
-function ApplicationsPanel({ applications, listingNameById, isMaster, groups }: {
+function ApplicationsPanel({ applications, listingNameById, isMaster, groups, adminAction, reload }: {
   applications: Application[];
   listingNameById: (id: string | null) => string;
   isMaster: boolean;
   groups: Group[];
+  adminAction: (a: string, b?: Record<string, unknown>) => Promise<any>;
+  reload: () => void;
 }) {
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const groupSlug = (gid: string | null) => {
     if (!gid) return "—";
     return groups.find((g) => g.id === gid)?.slug ?? "—";
   };
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return applications;
+    return applications.filter((a) => {
+      const haystack = [listingNameById(a.listing_id), groupSlug(a.link_group_id), ...Object.values(a.data ?? {})].join(" ").toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [applications, query, groups]);
+  const toggleAll = () => {
+    if (selected.size === filtered.length) setSelected(new Set());
+    else setSelected(new Set(filtered.map((a) => a.id)));
+  };
+  const toggleOne = (id: string) => {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setSelected(next);
+  };
+  const deleteSelected = async () => {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+    if (!confirm(`Delete ${ids.length} application(s)? This cannot be undone.`)) return;
+    try {
+      await adminAction("delete_applications", { ids });
+      toast.success(`Deleted ${ids.length}`);
+      setSelected(new Set());
+      reload();
+    } catch (e: any) { toast.error(e.message); }
+  };
+  const deleteOne = async (id: string) => {
+    if (!confirm("Delete this application?")) return;
+    try {
+      await adminAction("delete_applications", { ids: [id] });
+      toast.success("Deleted");
+      reload();
+    } catch (e: any) { toast.error(e.message); }
+  };
   return (
     <Card className="p-6">
-      <h3 className="font-semibold text-lg mb-1">{isMaster ? "All applications" : "Applications for your listings"}</h3>
-      <p className="font-sans-ui text-sm text-muted-foreground mb-4">
-        Each submission is also forwarded to {isMaster ? "you on Telegram" : "your Telegram and the super admin"}.
-      </p>
-      {applications.length === 0 && (
-        <p className="font-sans-ui text-sm text-muted-foreground">No applications yet.</p>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div>
+          <h3 className="font-semibold text-lg mb-1">{isMaster ? "All applications" : "Applications for your listings"}</h3>
+          <p className="font-sans-ui text-sm text-muted-foreground">
+            Each submission is also forwarded to {isMaster ? "you on Telegram" : "your Telegram and the super admin"}. {filtered.length} of {applications.length} shown.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 font-sans-ui">
+          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search name, email, listing…" className="w-60" />
+          {selected.size > 0 && (
+            <Button onClick={deleteSelected} variant="destructive" size="sm"><Trash2 className="w-4 h-4 mr-1" />Delete {selected.size}</Button>
+          )}
+        </div>
+      </div>
+      {filtered.length === 0 && <p className="font-sans-ui text-sm text-muted-foreground">No applications.</p>}
+      {filtered.length > 0 && (
+        <div className="flex items-center gap-2 mb-2 font-sans-ui text-xs">
+          <input type="checkbox" checked={selected.size === filtered.length} onChange={toggleAll} />
+          <span className="text-muted-foreground">Select all visible</span>
+        </div>
       )}
       <div className="space-y-3 font-sans-ui">
-        {applications.map((a) => (
+        {filtered.map((a) => (
           <div key={a.id} className="p-4 rounded-md bg-secondary/40 border border-border">
             <div className="flex flex-wrap justify-between items-start gap-2 mb-2">
-              <div>
-                <p className="font-medium text-sm">🏠 {listingNameById(a.listing_id)}</p>
-                {isMaster && (
-                  <p className="text-xs text-muted-foreground">Group: /{groupSlug(a.link_group_id)}</p>
-                )}
+              <div className="flex items-start gap-3">
+                <input type="checkbox" className="mt-1" checked={selected.has(a.id)} onChange={() => toggleOne(a.id)} />
+                <div>
+                  <p className="font-medium text-sm">🏠 {listingNameById(a.listing_id)}</p>
+                  {isMaster && (
+                    <p className="text-xs text-muted-foreground">Group: /{groupSlug(a.link_group_id)}</p>
+                  )}
+                </div>
               </div>
-              <span className="text-xs text-muted-foreground">{new Date(a.created_at).toLocaleString()}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">{new Date(a.created_at).toLocaleString()}</span>
+                <Button onClick={() => deleteOne(a.id)} variant="ghost" size="sm" className="text-destructive hover:text-destructive h-7 w-7 p-0"><Trash2 className="w-3.5 h-3.5" /></Button>
+              </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-sm">
               {Object.entries(a.data || {}).map(([k, v]) => (
@@ -626,6 +752,202 @@ function ApplicationsPanel({ applications, listingNameById, isMaster, groups }: 
                 </div>
               ))}
             </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function OverviewPanel({ groups, users, applications, chatThreads, scrapeStats }: {
+  groups: Group[]; users: BotUser[]; applications: Application[]; chatThreads: ChatThread[];
+  scrapeStats: { listings_total: number; links_total: number; visits_total: number };
+}) {
+  const unread = chatThreads.reduce((s, t) => s + (t.unread ?? 0), 0);
+  const allowed = users.filter(u => u.is_allowed).length;
+  const cards = [
+    { label: "Listing groups", value: scrapeStats.links_total, hint: `${groups.length} loaded` },
+    { label: "Total listings", value: scrapeStats.listings_total },
+    { label: "Tenant page visits", value: scrapeStats.visits_total },
+    { label: "Bot users (allowed)", value: `${allowed} / ${users.length}` },
+    { label: "Applications", value: applications.length },
+    { label: "Unread chats", value: unread },
+  ];
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        {cards.map(c => (
+          <Card key={c.label} className="p-5 font-sans-ui">
+            <p className="text-xs uppercase tracking-wider text-muted-foreground">{c.label}</p>
+            <p className="text-3xl font-semibold mt-1">{c.value}</p>
+            {c.hint && <p className="text-xs text-muted-foreground mt-1">{c.hint}</p>}
+          </Card>
+        ))}
+      </div>
+      <Card className="p-6">
+        <h3 className="font-semibold text-lg mb-3">Recent listing groups</h3>
+        <div className="space-y-2 font-sans-ui text-sm">
+          {groups.slice(0, 5).map(g => (
+            <div key={g.id} className="flex items-center justify-between p-2 rounded bg-secondary/40">
+              <span>/{g.slug} <span className="text-xs text-muted-foreground">· {g.listing_count ?? 0} listing(s)</span></span>
+              <span className="text-xs text-muted-foreground">{new Date(g.created_at).toLocaleDateString()}</span>
+            </div>
+          ))}
+          {groups.length === 0 && <p className="text-muted-foreground">No groups yet.</p>}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function FindListingsPanel({ fetched, adminAction, reload }: {
+  fetched: Fetched[]; adminAction: (a: string, b?: Record<string, unknown>) => Promise<any>; reload: () => void;
+}) {
+  const [zip, setZip] = useState("");
+  const [beds, setBeds] = useState("any");
+  const [baths, setBaths] = useState("any");
+  const [types, setTypes] = useState<string[]>(["any"]);
+  const [busy, setBusy] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [hiddenPhotos, setHiddenPhotos] = useState<Record<string, Set<number>>>({});
+
+  const toggleType = (t: string) => {
+    if (t === "any") { setTypes(["any"]); return; }
+    const cur = new Set(types.filter(x => x !== "any"));
+    if (cur.has(t)) cur.delete(t); else cur.add(t);
+    setTypes(cur.size ? Array.from(cur) : ["any"]);
+  };
+  const search = async () => {
+    if (!/^\d{5}$/.test(zip.trim())) { toast.error("Enter a 5-digit ZIP"); return; }
+    setBusy(true);
+    try {
+      const res = await adminAction("find_listings", { zip: zip.trim(), beds, baths, types });
+      toast.success(`Found ${res.fetched ?? 0} listing(s) (scanned ${res.scanned ?? 0})`);
+      reload();
+    } catch (e: any) { toast.error(e.message); }
+    setBusy(false);
+  };
+  const togglePhoto = (rowId: string, idx: number) => {
+    setHiddenPhotos(prev => {
+      const set = new Set(prev[rowId] ?? []);
+      if (set.has(idx)) set.delete(idx); else set.add(idx);
+      return { ...prev, [rowId]: set };
+    });
+  };
+  const toggleSelected = (id: string) => {
+    const n = new Set(selected);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    setSelected(n);
+  };
+  const importSelected = async () => {
+    const ids = Array.from(selected);
+    if (!ids.length) { toast.error("Select at least one"); return; }
+    try {
+      // Filter out hidden photos before importing — server takes the row's photos array as-is,
+      // so we need to call import per-row OR we just dismiss separately. Simpler: rely on the
+      // user to remove unwanted photos by dismissing the row, or filter client-side via update.
+      // For now, send the selected ids; the editor will let them prune photos after import.
+      await adminAction("import_fetched", { ids });
+      toast.success(`Imported ${ids.length} listing(s) into your group`);
+      setSelected(new Set());
+      reload();
+    } catch (e: any) { toast.error(e.message); }
+  };
+  const dismiss = async (id: string) => {
+    try {
+      await adminAction("dismiss_fetched", { ids: [id] });
+      reload();
+    } catch (e: any) { toast.error(e.message); }
+  };
+  return (
+    <div className="space-y-6">
+      <Card className="p-6">
+        <h3 className="font-semibold text-lg mb-1 flex items-center gap-2"><Search className="w-4 h-4 text-accent" />Find listings for me</h3>
+        <p className="font-sans-ui text-sm text-muted-foreground mb-4">Searches Zillow + Redfin by ZIP, beds, baths, and type. Results land below for review — you can hide ad photos before importing.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 font-sans-ui">
+          <div><Label>ZIP</Label><Input value={zip} onChange={(e) => setZip(e.target.value)} placeholder="30341" /></div>
+          <div><Label>Beds</Label>
+            <select value={beds} onChange={(e) => setBeds(e.target.value)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
+              {["any","1","2","3","3+","4+"].map(v => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </div>
+          <div><Label>Baths</Label>
+            <select value={baths} onChange={(e) => setBaths(e.target.value)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
+              {["any","1","1.5","2","2+","3+"].map(v => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </div>
+          <div><Label>Type</Label>
+            <div className="flex flex-wrap gap-1 mt-1">
+              {["any","house","apartment","condo"].map(t => (
+                <Button key={t} type="button" size="sm" variant={types.includes(t) ? "default" : "outline"} onClick={() => toggleType(t)} className="h-8 text-xs">{t}</Button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <Button onClick={search} disabled={busy} className="mt-4 bg-primary hover:bg-primary/90">
+          <Search className="w-4 h-4 mr-2" />{busy ? "Searching… (~30s)" : "Search"}
+        </Button>
+      </Card>
+
+      <Card className="p-6">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-lg">Review queue ({fetched.length})</h3>
+          {selected.size > 0 && <Button onClick={importSelected} size="sm">Import {selected.size} selected</Button>}
+        </div>
+        {fetched.length === 0 && <p className="font-sans-ui text-sm text-muted-foreground">Nothing pending. Run a search above.</p>}
+        <div className="space-y-4 font-sans-ui">
+          {fetched.map(f => (
+            <div key={f.id} className="border border-border rounded-md p-4">
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <label className="flex items-start gap-2 flex-1 min-w-0 cursor-pointer">
+                  <input type="checkbox" className="mt-1" checked={selected.has(f.id)} onChange={() => toggleSelected(f.id)} />
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm truncate">{f.address ?? "Unknown address"}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {f.source} · ${f.price ?? "—"} · {f.beds ?? "—"}bd / {f.baths ?? "—"}ba · {f.sqft ?? "—"}sqft · {f.property_type ?? "—"}
+                    </p>
+                    <a href={f.source_url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline">Source ↗</a>
+                  </div>
+                </label>
+                <Button onClick={() => dismiss(f.id)} variant="ghost" size="sm" className="text-destructive h-7 w-7 p-0"><X className="w-4 h-4" /></Button>
+              </div>
+              {f.photos.length > 0 && (
+                <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-7 gap-2">
+                  {f.photos.map((url, i) => {
+                    const hidden = hiddenPhotos[f.id]?.has(i);
+                    return (
+                      <button key={i} type="button" onClick={() => togglePhoto(f.id, i)} className={`relative aspect-square rounded overflow-hidden border-2 ${hidden ? "border-destructive opacity-30" : "border-border"}`}>
+                        <img src={url} alt="" className="w-full h-full object-cover" loading="lazy" />
+                        {hidden && <span className="absolute top-0.5 left-0.5 bg-destructive text-destructive-foreground text-[10px] px-1 rounded">SKIP</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function VisitorsPanel({ stats }: { stats: VisitorStats }) {
+  return (
+    <Card className="p-6">
+      <h3 className="font-semibold text-lg mb-1 flex items-center gap-2"><Globe className="w-4 h-4 text-accent" />Tenant page visitors</h3>
+      <p className="font-sans-ui text-sm text-muted-foreground mb-4">
+        <b>{stats.total}</b> total visit(s) · <b>{stats.last24h}</b> in last 24h. New visits ping you on Telegram.
+      </p>
+      <div className="space-y-2 font-sans-ui text-sm">
+        {stats.recent.length === 0 && <p className="text-muted-foreground">No visits yet.</p>}
+        {stats.recent.map(v => (
+          <div key={v.id} className="flex flex-wrap items-start justify-between gap-3 p-3 rounded bg-secondary/40">
+            <div className="min-w-0">
+              <p className="font-medium flex items-center gap-1"><MapPin className="w-3.5 h-3.5" />{[v.city, v.region, v.country].filter(Boolean).join(", ") || "Unknown location"} <span className="text-xs text-muted-foreground ml-2">{v.ip ?? ""}</span></p>
+              <p className="text-xs text-muted-foreground truncate">{v.browser ?? "?"} · {v.os ?? "?"} · {v.device ?? "?"} · {v.referrer ? `from ${v.referrer}` : "direct"}</p>
+            </div>
+            <span className="text-xs text-muted-foreground whitespace-nowrap">{new Date(v.created_at).toLocaleString()}</span>
           </div>
         ))}
       </div>

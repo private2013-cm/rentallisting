@@ -7,18 +7,19 @@ import { draftFromUrl, scrapeZillow } from "../_shared/zillow.ts";
 // Persistent reply keyboard shown to allowed users
 const userKeyboard = {
   keyboard: [
-    [{ text: "🏠 New listing link" }, { text: "📝 Edit my listings" }],
-    [{ text: "💬 Message admin" }, { text: "🪙 My credits" }],
-    [{ text: "❓ Help" }],
+    [{ text: "🏠 New listing link" }, { text: "🔎 Find listings" }],
+    [{ text: "📝 Edit my listings" }, { text: "💬 Message admin" }],
+    [{ text: "🪙 My credits" }, { text: "❓ Help" }],
   ],
   resize_keyboard: true,
   is_persistent: true,
 };
 const adminKeyboard = {
   keyboard: [
-    [{ text: "🏠 New listing link" }, { text: "📝 Edit my listings" }],
-    [{ text: "👥 Users" }, { text: "🛡 Master admin" }],
-    [{ text: "📣 Broadcast" }, { text: "❓ Help" }],
+    [{ text: "🏠 New listing link" }, { text: "🔎 Find listings" }],
+    [{ text: "📝 Edit my listings" }, { text: "👥 Users" }],
+    [{ text: "🛡 Master admin" }, { text: "📣 Broadcast" }],
+    [{ text: "❓ Help" }],
   ],
   resize_keyboard: true,
   is_persistent: true,
@@ -245,6 +246,45 @@ async function showFieldMenu(chatId: number, listingId: string) {
   });
 }
 
+type FindFilters = { zip: string; beds: string; baths: string; types: string[] };
+
+function findKeyboard(f: FindFilters) {
+  const opt = (val: string, cur: string) => (val === cur ? `✅ ${val}` : val);
+  const typeOpt = (val: string) => (f.types.includes(val) ? `✅ ${val}` : val);
+  return {
+    inline_keyboard: [
+      [{ text: `Beds: ${f.beds}`, callback_data: "noop" }],
+      [
+        { text: opt("any", f.beds), callback_data: "find:beds:any" },
+        { text: opt("1", f.beds), callback_data: "find:beds:1" },
+        { text: opt("2", f.beds), callback_data: "find:beds:2" },
+        { text: opt("3", f.beds), callback_data: "find:beds:3" },
+        { text: opt("3+", f.beds), callback_data: "find:beds:3+" },
+      ],
+      [{ text: `Baths: ${f.baths}`, callback_data: "noop" }],
+      [
+        { text: opt("any", f.baths), callback_data: "find:baths:any" },
+        { text: opt("1", f.baths), callback_data: "find:baths:1" },
+        { text: opt("1.5", f.baths), callback_data: "find:baths:1.5" },
+        { text: opt("2", f.baths), callback_data: "find:baths:2" },
+        { text: opt("2+", f.baths), callback_data: "find:baths:2+" },
+      ],
+      [{ text: `Type: ${f.types.join(", ")}`, callback_data: "noop" }],
+      [
+        { text: typeOpt("any"), callback_data: "find:type:any" },
+        { text: typeOpt("house"), callback_data: "find:type:house" },
+        { text: typeOpt("apartment"), callback_data: "find:type:apartment" },
+        { text: typeOpt("condo"), callback_data: "find:type:condo" },
+      ],
+      [{ text: `🔎 Search ZIP ${f.zip}`, callback_data: "find:go" }, { text: "❌ Cancel", callback_data: "find:cancel" }],
+    ],
+  };
+}
+
+async function sendFindMenu(chatId: number, f: FindFilters) {
+  await sendMessage(chatId, `🔎 <b>Find listings in ${f.zip}</b>\n\nPick filters then tap <b>Search</b>:`, { reply_markup: findKeyboard(f) });
+}
+
 async function handleUpdate(update: any, req: Request) {
   // Callback queries (inline buttons)
   if (update.callback_query) {
@@ -324,6 +364,48 @@ async function handleUpdate(update: any, req: Request) {
       await showListingPicker(chatId, fromId);
       return;
     }
+    if (data.startsWith("find:")) {
+      const st = await getState(stateId);
+      const f: FindFilters = (st?.data as any) ?? { zip: "", beds: "any", baths: "any", types: ["any"] };
+      const [, kind, val] = data.split(":");
+      if (kind === "cancel") { await clearState(stateId); await sendMessage(chatId, "Cancelled."); return; }
+      if (kind === "go") {
+        if (!f.zip) { await sendMessage(chatId, "Send /find again."); return; }
+        await sendMessage(chatId, `🔎 Searching ZIP <b>${f.zip}</b>… this may take ~30s.`);
+        try {
+          const res = await fetch(`${SUPABASE_URL}/functions/v1/find-listings`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE_KEY}` },
+            body: JSON.stringify({ owner_telegram_id: fromId, zip: f.zip, beds: f.beds, baths: f.baths, types: f.types, limit: 8 }),
+          });
+          const out = await res.json();
+          if (!res.ok) throw new Error(out?.error ?? "Search failed");
+          const base = await publicBase(req);
+          const { data: grp } = await supabase.from("link_groups").select("slug").eq("owner_telegram_id", fromId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+          const reviewUrl = grp ? `${base}/admin/${grp.slug}` : `${base}/admin`;
+          await sendMessage(chatId, `✅ Found <b>${out.fetched ?? 0}</b> listing(s) (scanned ${out.scanned ?? 0}).\n\nReview & import them on the <a href="${reviewUrl}">admin page → Find listings</a>.`);
+        } catch (e) {
+          await sendMessage(chatId, `❌ ${(e as Error).message}`);
+        }
+        await clearState(stateId);
+        return;
+      }
+      if (kind === "beds") f.beds = val;
+      else if (kind === "baths") f.baths = val;
+      else if (kind === "type") {
+        if (val === "any") f.types = ["any"];
+        else {
+          const cur = new Set(f.types.filter(t => t !== "any"));
+          if (cur.has(val)) cur.delete(val); else cur.add(val);
+          f.types = cur.size ? Array.from(cur) : ["any"];
+        }
+      }
+      await setState(stateId, "find_filters", f as unknown as Record<string, unknown>);
+      try {
+        await tg("editMessageReplyMarkup", { chat_id: chatId, message_id: cb.message?.message_id, reply_markup: findKeyboard(f) });
+      } catch (_) {}
+      return;
+    }
     if (fromId === ADMIN_ID && data.startsWith("chatreply:")) {
       const targetId = Number(data.split(":")[1]);
       await setState(ADMIN_ID, "replying_to_tenant", { target_id: targetId });
@@ -352,6 +434,7 @@ async function handleUpdate(update: any, req: Request) {
     "📝 Edit my listings": "/edit",
     "💬 Message admin": "/chat",
     "📣 Broadcast": "/broadcast",
+    "🔎 Find listings": "/find",
   };
   if (labelMap[text]) text = labelMap[text];
 
@@ -441,6 +524,14 @@ async function handleUpdate(update: any, req: Request) {
   if (text.startsWith("/edit")) {
     if (!user.is_allowed) { await sendMessage(chatId, "⏳ Waiting for admin approval."); return; }
     await showListingPicker(chatId, fromId);
+    return;
+  }
+
+  // /find — interactive search flow
+  if (text.startsWith("/find")) {
+    if (!user.is_allowed) { await sendMessage(chatId, "⏳ Waiting for admin approval."); return; }
+    await setState(stateId, "find_zip", {});
+    await sendMessage(chatId, "🔎 <b>Find listings</b>\n\nSend the <b>ZIP code</b> to search (e.g. <code>30341</code>). /cancel to stop.");
     return;
   }
 
@@ -622,6 +713,15 @@ async function handleUpdate(update: any, req: Request) {
       } catch (_) {}
     }
     await sendMessage(chatId, "✅ Sent. Type another message or /cancel to stop.");
+    return;
+  }
+
+  // Find listings flow — collect zip then show filter menu
+  if (state?.state === "find_zip") {
+    const zip = text.trim().match(/^\d{5}$/)?.[0];
+    if (!zip) { await sendMessage(chatId, "⚠️ Send a 5-digit ZIP code, or /cancel."); return; }
+    await setState(stateId, "find_filters", { zip, beds: "any", baths: "any", types: ["any"] });
+    await sendFindMenu(chatId, { zip, beds: "any", baths: "any", types: ["any"] });
     return;
   }
 
