@@ -296,12 +296,37 @@ const AdminPage = () => {
                   }}
                 ><Save className="w-4 h-4 mr-2" />Save default bio</Button>
               </Card>
-            </TabsContent>
-          )}
 
-          {isMaster && (
-            <TabsContent value="users" className="mt-6">
-              <UsersPanel users={users} reload={load} adminAction={adminAction} />
+              <Card className="p-6 max-w-2xl">
+                <h3 className="font-semibold text-lg mb-1">Default description</h3>
+                <p className="font-sans-ui text-sm text-muted-foreground mb-4">Used when a scraped listing has no description. Per-listing edits always win.</p>
+                <Textarea rows={5} value={defaultDescription} onChange={(e) => setDefaultDescription(e.target.value)} className="font-sans-ui" />
+                <Button
+                  className="mt-4 bg-primary hover:bg-primary/90"
+                  onClick={async () => {
+                    try {
+                      await adminAction("update_setting", { setting_key: "default_description", value: defaultDescription });
+                      toast.success("Default description saved");
+                    } catch (e: any) { toast.error(e.message); }
+                  }}
+                ><Save className="w-4 h-4 mr-2" />Save default description</Button>
+              </Card>
+
+              <Card className="p-6 max-w-2xl">
+                <h3 className="font-semibold text-lg mb-1">Default application fee ($)</h3>
+                <p className="font-sans-ui text-sm text-muted-foreground mb-4">Shown on tenant pages and the apply form (display only — no payment is collected).</p>
+                <Input type="number" value={defaultApplicationFee} onChange={(e) => setDefaultApplicationFee(e.target.value)} className="font-sans-ui max-w-xs" placeholder="e.g. 35" />
+                <Button
+                  className="mt-4 bg-primary hover:bg-primary/90"
+                  onClick={async () => {
+                    try {
+                      const v = defaultApplicationFee.trim() === "" ? null : Number(defaultApplicationFee);
+                      await adminAction("update_setting", { setting_key: "default_application_fee", value: v });
+                      toast.success("Default fee saved");
+                    } catch (e: any) { toast.error(e.message); }
+                  }}
+                ><Save className="w-4 h-4 mr-2" />Save default fee</Button>
+              </Card>
             </TabsContent>
           )}
 
