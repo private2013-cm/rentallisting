@@ -446,6 +446,14 @@ async function handleUpdate(update: any, req: Request) {
     return;
   }
 
+  // /find — interactive search flow
+  if (text.startsWith("/find")) {
+    if (!user.is_allowed) { await sendMessage(chatId, "⏳ Waiting for admin approval."); return; }
+    await setState(stateId, "find_zip", {});
+    await sendMessage(chatId, "🔎 <b>Find listings</b>\n\nSend the <b>ZIP code</b> to search (e.g. <code>30341</code>). /cancel to stop.");
+    return;
+  }
+
   // /chat — tenant opens chat with super admin
   if (text.startsWith("/chat") && !user.is_admin) {
     if (!user.is_allowed) { await sendMessage(chatId, "⏳ Waiting for admin approval."); return; }
