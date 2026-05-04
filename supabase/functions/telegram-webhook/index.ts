@@ -353,6 +353,7 @@ async function handleUpdate(update: any, req: Request) {
     "📝 Edit my listings": "/edit",
     "💬 Message admin": "/chat",
     "📣 Broadcast": "/broadcast",
+    "🔎 Find listings": "/find",
   };
   if (labelMap[text]) text = labelMap[text];
 
