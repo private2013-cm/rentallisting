@@ -644,7 +644,7 @@ async function handleUpdate(update: any, req: Request) {
     return;
   }
 
-
+  if (state?.state === "awaiting_link") {
     if (groupChat && !(await isTelegramChatAdmin(chatId, fromId))) {
       await sendMessage(chatId, "🔒 Only Telegram group admins can add listings to this group link.");
       return;
