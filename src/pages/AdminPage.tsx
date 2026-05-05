@@ -859,6 +859,7 @@ function FindListingsPanel({ fetched, adminAction, reload }: {
   const [beds, setBeds] = useState("any");
   const [baths, setBaths] = useState("any");
   const [types, setTypes] = useState<string[]>(["any"]);
+  const [howMany, setHowMany] = useState<string>("10");
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [hiddenPhotos, setHiddenPhotos] = useState<Record<string, Set<number>>>({});
@@ -873,7 +874,8 @@ function FindListingsPanel({ fetched, adminAction, reload }: {
     if (!/^\d{5}$/.test(zip.trim())) { toast.error("Enter a 5-digit ZIP"); return; }
     setBusy(true);
     try {
-      const res = await adminAction("find_listings", { zip: zip.trim(), beds, baths, types });
+      const limit = howMany === "all" ? "all" : Number(howMany);
+      const res = await adminAction("find_listings", { zip: zip.trim(), beds, baths, types, limit });
       toast.success(`Found ${res.fetched ?? 0} listing(s) (scanned ${res.scanned ?? 0})`);
       reload();
     } catch (e: any) { toast.error(e.message); }
