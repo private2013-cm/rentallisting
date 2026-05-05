@@ -1,8 +1,8 @@
-// "Find listings for me" — searches Zillow + Redfin by zip/beds/baths/type,
-// scrapes each, and saves into fetched_listings for the owner to review.
+// Zillow-only "Find listings" — searches Zillow by zip/beds/baths/type,
+// scrapes each in parallel, saves into fetched_listings for owner review.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { corsHeaders } from "../_shared/cors.ts";
-import { searchRentals, scrapeListing, detectSource } from "../_shared/scraper.ts";
+import { searchRentals, scrapeListing } from "../_shared/scraper.ts";
 
 const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
@@ -22,6 +22,21 @@ function typeMatch(targets: string[], actual: string | null): boolean {
   return targets.includes(actual);
 }
 
+// Parallel-with-cap helper for fast scraping
+async function mapPool<T, R>(items: T[], limit: number, fn: (it: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) {
+      const idx = i++;
+      if (idx >= items.length) return;
+      try { out[idx] = await fn(items[idx]); } catch { out[idx] = null as any; }
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   try {
@@ -29,15 +44,23 @@ Deno.serve(async (req) => {
     if (!owner_telegram_id || !zip) {
       return new Response(JSON.stringify({ error: "missing owner_telegram_id or zip" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
-    const max = Math.min(Math.max(Number(limit ?? 8), 1), 12);
+    // limit can be a number or "all"
+    const isAll = limit === "all" || limit === -1;
+    const max = isAll ? 40 : Math.min(Math.max(Number(limit ?? 10), 1), 40);
 
-    const urls = await searchRentals({ zip: String(zip), beds: String(beds ?? "any"), baths: String(baths ?? "any"), types: Array.isArray(types) ? types : ["any"], limit: max });
+    const urls = await searchRentals({
+      zip: String(zip),
+      beds: String(beds ?? "any"),
+      baths: String(baths ?? "any"),
+      types: Array.isArray(types) ? types : ["any"],
+      limit: max,
+    });
     if (!urls.length) {
-      return new Response(JSON.stringify({ ok: true, fetched: 0, message: "No matches found." }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ ok: true, fetched: 0, scanned: 0, message: "No matches found." }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Scrape in parallel for speed (cap concurrency)
-    const results = await Promise.all(urls.map(u => scrapeListing(u).catch(() => null)));
+    // Scrape up to 6 in parallel for speed
+    const results = await mapPool(urls, 6, (u) => scrapeListing(u));
 
     const inserts: any[] = [];
     for (const r of results) {
