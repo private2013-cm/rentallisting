@@ -649,7 +649,7 @@ async function handleUpdate(update: any, req: Request) {
     const lid = String(state.data?.listing_id ?? "");
     const field = String(state.data?.field ?? "");
     const raw = text.trim();
-    const numeric = ["price","deposit","beds","sqft"];
+    const numeric = ["price","deposit","application_fee","beds","baths","sqft"];
     let value: any;
     if (raw === "-" || raw === "") value = null;
     else if (numeric.includes(field)) {
