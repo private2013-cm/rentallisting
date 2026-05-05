@@ -237,7 +237,8 @@ async function showFieldMenu(chatId: number, listingId: string) {
     reply_markup: {
       inline_keyboard: [
         [{ text: "💰 Price", callback_data: `editfld:${listingId}:price` }, { text: "💵 Deposit", callback_data: `editfld:${listingId}:deposit` }],
-        [{ text: "🛏 Beds", callback_data: `editfld:${listingId}:beds` }, { text: "📐 Sqft", callback_data: `editfld:${listingId}:sqft` }],
+        [{ text: "📋 Application fee", callback_data: `editfld:${listingId}:application_fee` }, { text: "🛏 Beds", callback_data: `editfld:${listingId}:beds` }],
+        [{ text: "📐 Sqft", callback_data: `editfld:${listingId}:sqft` }, { text: "🚿 Baths", callback_data: `editfld:${listingId}:baths` }],
         [{ text: "📍 Address", callback_data: `editfld:${listingId}:address` }, { text: "🏷 Heading", callback_data: `editfld:${listingId}:heading` }],
         [{ text: "📝 Bio", callback_data: `editfld:${listingId}:bio` }, { text: "📄 Description", callback_data: `editfld:${listingId}:description` }],
         [{ text: "⬅️ Back to listings", callback_data: "editback" }],
