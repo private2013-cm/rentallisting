@@ -37,6 +37,7 @@ const AdminPage = () => {
   const [defaultDescription, setDefaultDescription] = useState("");
   const [defaultApplicationFee, setDefaultApplicationFee] = useState<string>("");
   const [tenantHeading, setTenantHeading] = useState("Private landlord rental listing");
+  const [groupHeading, setGroupHeading] = useState("");
   const [users, setUsers] = useState<BotUser[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
   const [interestCounts, setInterestCounts] = useState<Record<string, { yes: number; no: number }>>({});
