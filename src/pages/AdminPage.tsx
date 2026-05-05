@@ -231,6 +231,20 @@ const AdminPage = () => {
 
           {!isMaster && (
             <TabsContent value="listings" className="space-y-6 mt-6">
+              <Card className="p-6">
+                <h3 className="font-semibold text-lg mb-1">Your tenant page heading</h3>
+                <p className="font-sans-ui text-sm text-muted-foreground mb-3">Shown at the top of <code>/l/{slug}</code>. Leave blank to use the global default.</p>
+                <div className="flex gap-2">
+                  <Input value={groupHeading} onChange={(e) => setGroupHeading(e.target.value)} placeholder={tenantHeading} className="font-sans-ui" />
+                  <Button
+                    onClick={async () => {
+                      try { await adminAction("update_group_heading", { heading: groupHeading }); toast.success("Heading saved"); }
+                      catch (e: any) { toast.error(e.message); }
+                    }}
+                    className="bg-primary hover:bg-primary/90"
+                  ><Save className="w-4 h-4 mr-2" />Save</Button>
+                </div>
+              </Card>
               {listings.map(l => (
                 <ListingEditor key={l.id} listing={l} interest={interestCounts[l.id] ?? { yes: 0, no: 0 }} tenantUrl={tenantUrl} adminAction={adminAction} reload={load} />
               ))}
