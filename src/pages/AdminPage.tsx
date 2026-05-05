@@ -515,6 +515,7 @@ function ListingEditor({ listing, interest, tenantUrl, adminAction, reload }: { 
         </div>
         <div><Label>Price ($)</Label><Input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /></div>
         <div><Label>Deposit ($)</Label><Input type="number" value={form.deposit} onChange={(e) => setForm({ ...form, deposit: e.target.value })} /></div>
+        <div><Label>Application fee ($)</Label><Input type="number" value={form.application_fee} onChange={(e) => setForm({ ...form, application_fee: e.target.value })} placeholder="Leave blank to hide" /></div>
         <div><Label>Beds</Label><Input type="number" value={form.beds} onChange={(e) => setForm({ ...form, beds: e.target.value })} /></div>
         <div><Label>Baths</Label><Input type="number" step="0.5" value={form.baths} onChange={(e) => setForm({ ...form, baths: e.target.value })} /></div>
         <div className="md:col-span-2"><Label>Square feet</Label><Input type="number" value={form.sqft} onChange={(e) => setForm({ ...form, sqft: e.target.value })} placeholder="Leave blank to hide" /></div>
@@ -538,9 +539,18 @@ function ListingEditor({ listing, interest, tenantUrl, adminAction, reload }: { 
 
       <div className="mt-6">
         <p className="font-sans-ui text-sm font-medium mb-2">Photos ({listing.photos.length} total · {visibleCount} will be visible after save)</p>
-        <div className="flex flex-col sm:flex-row gap-2 mb-3 font-sans-ui">
-          <Input value={photoUrl} onChange={(e) => setPhotoUrl(e.target.value)} placeholder="Paste image URL to add a photo" />
-          <Button onClick={addPhoto} disabled={!photoUrl.trim()} variant="outline">Add photo</Button>
+        <div className="flex flex-col gap-2 mb-3 font-sans-ui">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => uploadFiles(e.target.files)} />
+            <Button onClick={() => fileRef.current?.click()} disabled={uploading} variant="default" className="bg-primary hover:bg-primary/90">
+              {uploading ? "Uploading…" : "📷 Upload from device"}
+            </Button>
+            <span className="text-xs text-muted-foreground self-center">or paste an image URL ↓</span>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Input value={photoUrl} onChange={(e) => setPhotoUrl(e.target.value)} placeholder="https://..." />
+            <Button onClick={addPhoto} disabled={!photoUrl.trim()} variant="outline">Add by URL</Button>
+          </div>
         </div>
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
           {listing.photos.map(p => {
