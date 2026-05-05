@@ -82,6 +82,7 @@ const AdminPage = () => {
       setDefaultDescription(data.defaultDescription ?? "");
       setDefaultApplicationFee(data.defaultApplicationFee != null ? String(data.defaultApplicationFee) : "");
       setTenantHeading(data.tenantHeading ?? "Private landlord rental listing");
+      setGroupHeading(data.groupHeading ?? "");
       setUsers(data.users ?? []);
       setApplications(data.applications ?? []);
       setChatMessages(data.chatMessages ?? []);
