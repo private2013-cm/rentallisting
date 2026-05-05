@@ -917,8 +917,8 @@ function FindListingsPanel({ fetched, adminAction, reload }: {
     <div className="space-y-6">
       <Card className="p-6">
         <h3 className="font-semibold text-lg mb-1 flex items-center gap-2"><Search className="w-4 h-4 text-accent" />Find listings for me</h3>
-        <p className="font-sans-ui text-sm text-muted-foreground mb-4">Searches Zillow + Redfin by ZIP, beds, baths, and type. Results land below for review — you can hide ad photos before importing.</p>
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 font-sans-ui">
+        <p className="font-sans-ui text-sm text-muted-foreground mb-4">Searches Zillow rentals by ZIP, beds, baths, and type. Results land below — review and import the ones you want.</p>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 font-sans-ui">
           <div><Label>ZIP</Label><Input value={zip} onChange={(e) => setZip(e.target.value)} placeholder="30341" /></div>
           <div><Label>Beds</Label>
             <select value={beds} onChange={(e) => setBeds(e.target.value)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
@@ -930,7 +930,12 @@ function FindListingsPanel({ fetched, adminAction, reload }: {
               {["any","1","1.5","2","2+","3+"].map(v => <option key={v} value={v}>{v}</option>)}
             </select>
           </div>
-          <div><Label>Type</Label>
+          <div><Label>How many</Label>
+            <select value={howMany} onChange={(e) => setHowMany(e.target.value)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
+              {["5","10","15","20","30","all"].map(v => <option key={v} value={v}>{v === "all" ? "All (max 40)" : v}</option>)}
+            </select>
+          </div>
+          <div className="col-span-2 sm:col-span-1"><Label>Type</Label>
             <div className="flex flex-wrap gap-1 mt-1">
               {["any","house","apartment","condo"].map(t => (
                 <Button key={t} type="button" size="sm" variant={types.includes(t) ? "default" : "outline"} onClick={() => toggleType(t)} className="h-8 text-xs">{t}</Button>
@@ -939,7 +944,7 @@ function FindListingsPanel({ fetched, adminAction, reload }: {
           </div>
         </div>
         <Button onClick={search} disabled={busy} className="mt-4 bg-primary hover:bg-primary/90">
-          <Search className="w-4 h-4 mr-2" />{busy ? "Searching… (~30s)" : "Search"}
+          <Search className="w-4 h-4 mr-2" />{busy ? "Searching Zillow…" : "Search Zillow"}
         </Button>
       </Card>
 
