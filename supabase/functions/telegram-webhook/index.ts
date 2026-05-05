@@ -356,7 +356,7 @@ async function handleUpdate(update: any, req: Request) {
     }
     if (data.startsWith("editfld:")) {
       const [, lid, field] = data.split(":");
-      const labels: Record<string,string> = { price:"price ($)", deposit:"deposit ($)", beds:"beds", sqft:"square feet", bio:"bio", description:"description", heading:"page heading", address:"address" };
+      const labels: Record<string,string> = { price:"price ($)", deposit:"deposit ($)", application_fee:"application fee ($)", beds:"beds", baths:"baths", sqft:"square feet", bio:"bio", description:"description", heading:"page heading", address:"address" };
       await setState(stateId, "awaiting_field_value", { listing_id: lid, field });
       await sendMessage(chatId, `✏️ Send the new <b>${labels[field] ?? field}</b>. Send <code>-</code> to clear it. Send /cancel to abort.`);
       return;
