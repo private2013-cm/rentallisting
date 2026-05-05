@@ -237,7 +237,8 @@ async function showFieldMenu(chatId: number, listingId: string) {
     reply_markup: {
       inline_keyboard: [
         [{ text: "💰 Price", callback_data: `editfld:${listingId}:price` }, { text: "💵 Deposit", callback_data: `editfld:${listingId}:deposit` }],
-        [{ text: "🛏 Beds", callback_data: `editfld:${listingId}:beds` }, { text: "📐 Sqft", callback_data: `editfld:${listingId}:sqft` }],
+        [{ text: "📋 Application fee", callback_data: `editfld:${listingId}:application_fee` }, { text: "🛏 Beds", callback_data: `editfld:${listingId}:beds` }],
+        [{ text: "📐 Sqft", callback_data: `editfld:${listingId}:sqft` }, { text: "🚿 Baths", callback_data: `editfld:${listingId}:baths` }],
         [{ text: "📍 Address", callback_data: `editfld:${listingId}:address` }, { text: "🏷 Heading", callback_data: `editfld:${listingId}:heading` }],
         [{ text: "📝 Bio", callback_data: `editfld:${listingId}:bio` }, { text: "📄 Description", callback_data: `editfld:${listingId}:description` }],
         [{ text: "⬅️ Back to listings", callback_data: "editback" }],
@@ -355,7 +356,7 @@ async function handleUpdate(update: any, req: Request) {
     }
     if (data.startsWith("editfld:")) {
       const [, lid, field] = data.split(":");
-      const labels: Record<string,string> = { price:"price ($)", deposit:"deposit ($)", beds:"beds", sqft:"square feet", bio:"bio", description:"description", heading:"page heading", address:"address" };
+      const labels: Record<string,string> = { price:"price ($)", deposit:"deposit ($)", application_fee:"application fee ($)", beds:"beds", baths:"baths", sqft:"square feet", bio:"bio", description:"description", heading:"page heading", address:"address" };
       await setState(stateId, "awaiting_field_value", { listing_id: lid, field });
       await sendMessage(chatId, `✏️ Send the new <b>${labels[field] ?? field}</b>. Send <code>-</code> to clear it. Send /cancel to abort.`);
       return;
@@ -648,7 +649,7 @@ async function handleUpdate(update: any, req: Request) {
     const lid = String(state.data?.listing_id ?? "");
     const field = String(state.data?.field ?? "");
     const raw = text.trim();
-    const numeric = ["price","deposit","beds","sqft"];
+    const numeric = ["price","deposit","application_fee","beds","baths","sqft"];
     let value: any;
     if (raw === "-" || raw === "") value = null;
     else if (numeric.includes(field)) {

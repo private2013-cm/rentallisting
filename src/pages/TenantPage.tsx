@@ -39,10 +39,12 @@ const TenantPage = () => {
         .select("key, value")
         .in("key", ["tenant_heading"]);
       const headingRow = settings?.find((s: any) => s.key === "tenant_heading");
-      if (headingRow?.value) setHeading(String(headingRow.value));
+      let initialHeading = headingRow?.value ? String(headingRow.value) : "Private landlord rental listing";
 
-      const { data: group } = await supabase.from("link_groups").select("id").eq("slug", slug).maybeSingle();
+      const { data: group } = await supabase.from("link_groups").select("id, tenant_heading").eq("slug", slug).maybeSingle();
       if (!group) { setNotFound(true); setLoading(false); return; }
+      if (group.tenant_heading) initialHeading = String(group.tenant_heading);
+      setHeading(initialHeading);
 
       const { data: rows } = await supabase
         .from("listings")

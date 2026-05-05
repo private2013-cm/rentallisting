@@ -156,6 +156,7 @@ Deno.serve(async (req) => {
         scrapeStats = { listings_total: lTot ?? 0, links_total: gTot ?? 0, visits_total: vTot ?? 0 };
       }
 
+      const groupHeading = (group as any)?.tenant_heading ?? null;
       return new Response(JSON.stringify({
         groupId: group?.id ?? null,
         ownerTelegramId: (group as any)?.owner_telegram_id ?? null,
@@ -165,7 +166,8 @@ Deno.serve(async (req) => {
         defaultBio: typeof bioRow.data?.value === "string" ? bioRow.data.value : "",
         defaultDescription: typeof descRow.data?.value === "string" ? descRow.data.value : "",
         defaultApplicationFee: typeof feeRow.data?.value === "number" ? feeRow.data.value : (feeRow.data?.value ? Number(feeRow.data.value) : null),
-        tenantHeading: typeof headingRow.data?.value === "string" ? headingRow.data.value : "Private landlord rental listing",
+        tenantHeading: groupHeading ?? (typeof headingRow.data?.value === "string" ? headingRow.data.value : "Private landlord rental listing"),
+        groupHeading,
         users,
         interests: interestsRes.data ?? [],
         chatMessages,
@@ -203,15 +205,42 @@ Deno.serve(async (req) => {
       const g = requireGroup();
       const ownerId = Number((g as any).owner_telegram_id);
       if (!ownerId) throw new Error("This group has no owner Telegram ID.");
-      const { zip, beds, baths, types } = body;
+      const { zip, beds, baths, types, limit } = body;
       const fnRes = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/find-listings`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}` },
-        body: JSON.stringify({ owner_telegram_id: ownerId, zip, beds, baths, types }),
+        body: JSON.stringify({ owner_telegram_id: ownerId, zip, beds, baths, types, limit }),
       });
       const out = await fnRes.json();
       if (!fnRes.ok) throw new Error(out?.error ?? "Find listings failed");
       return new Response(JSON.stringify(out), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    else if (action === "update_group_heading") {
+      const g = requireGroup();
+      const heading = typeof body.heading === "string" ? body.heading.trim() : null;
+      assertOk(await supabase.from("link_groups").update({ tenant_heading: heading || null }).eq("id", g.id), "Update heading failed");
+    }
+    else if (action === "upload_photo") {
+      const g = requireGroup();
+      const listingId = String(body.listing_id ?? "");
+      const dataUrl = String(body.data_url ?? "");
+      const filename = String(body.filename ?? "photo");
+      if (!listingId) throw new Error("Missing listing_id");
+      const m = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+      if (!m) throw new Error("Invalid image data");
+      const mime = m[1];
+      const ext = mime.split("/")[1].split("+")[0].replace("jpeg", "jpg");
+      const bytes = Uint8Array.from(atob(m[2]), c => c.charCodeAt(0));
+      const { data: listing } = await supabase.from("listings").select("id").eq("id", listingId).eq("link_group_id", g.id).maybeSingle();
+      if (!listing) throw new Error("Listing not found");
+      const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 60);
+      const path = `${g.id}/${listingId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("listing-photos").upload(path, bytes, { contentType: mime, upsert: false });
+      if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
+      const { data: pub } = supabase.storage.from("listing-photos").getPublicUrl(path);
+      const { count } = await supabase.from("listing_photos").select("*", { count: "exact", head: true }).eq("listing_id", listingId);
+      assertOk(await supabase.from("listing_photos").insert({ listing_id: listingId, url: pub.publicUrl, position: count ?? 0 }), "Save photo failed");
+      return new Response(JSON.stringify({ ok: true, url: pub.publicUrl }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     else if (action === "import_fetched") {
       const g = requireGroup();
@@ -221,13 +250,17 @@ Deno.serve(async (req) => {
       const { count: existingCount } = await supabase.from("listings").select("id", { count: "exact", head: true }).eq("link_group_id", g.id);
       let pos = existingCount ?? 0;
       const { data: bioRow } = await supabase.from("app_settings").select("value").eq("key", "default_bio").maybeSingle();
+      const { data: feeRow2 } = await supabase.from("app_settings").select("value").eq("key", "default_application_fee").maybeSingle();
       const defaultBio = (bioRow?.value as string) ?? "";
+      const defaultFee = typeof feeRow2?.value === "number" ? feeRow2.value : (feeRow2?.value ? Number(feeRow2.value) : null);
       for (const r of rows ?? []) {
         const { data: ins } = await supabase.from("listings").insert({
           link_group_id: g.id, source_url: r.source_url,
           address: r.address, price: r.price, deposit: null,
           beds: r.beds, baths: r.baths, sqft: r.sqft,
+          property_type: r.property_type,
           description: r.description, bio: defaultBio,
+          application_fee: defaultFee,
           position: pos++,
         }).select().single();
         if (ins && Array.isArray(r.photos) && r.photos.length) {

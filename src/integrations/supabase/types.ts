@@ -268,6 +268,7 @@ export type Database = {
           id: string
           owner_telegram_id: number
           slug: string
+          tenant_heading: string | null
           title: string | null
         }
         Insert: {
@@ -275,6 +276,7 @@ export type Database = {
           id?: string
           owner_telegram_id: number
           slug: string
+          tenant_heading?: string | null
           title?: string | null
         }
         Update: {
@@ -282,6 +284,7 @@ export type Database = {
           id?: string
           owner_telegram_id?: number
           slug?: string
+          tenant_heading?: string | null
           title?: string | null
         }
         Relationships: []

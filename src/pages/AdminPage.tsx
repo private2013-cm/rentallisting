@@ -37,6 +37,7 @@ const AdminPage = () => {
   const [defaultDescription, setDefaultDescription] = useState("");
   const [defaultApplicationFee, setDefaultApplicationFee] = useState<string>("");
   const [tenantHeading, setTenantHeading] = useState("Private landlord rental listing");
+  const [groupHeading, setGroupHeading] = useState("");
   const [users, setUsers] = useState<BotUser[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
   const [interestCounts, setInterestCounts] = useState<Record<string, { yes: number; no: number }>>({});
@@ -81,6 +82,7 @@ const AdminPage = () => {
       setDefaultDescription(data.defaultDescription ?? "");
       setDefaultApplicationFee(data.defaultApplicationFee != null ? String(data.defaultApplicationFee) : "");
       setTenantHeading(data.tenantHeading ?? "Private landlord rental listing");
+      setGroupHeading(data.groupHeading ?? "");
       setUsers(data.users ?? []);
       setApplications(data.applications ?? []);
       setChatMessages(data.chatMessages ?? []);
@@ -229,6 +231,20 @@ const AdminPage = () => {
 
           {!isMaster && (
             <TabsContent value="listings" className="space-y-6 mt-6">
+              <Card className="p-6">
+                <h3 className="font-semibold text-lg mb-1">Your tenant page heading</h3>
+                <p className="font-sans-ui text-sm text-muted-foreground mb-3">Shown at the top of <code>/l/{slug}</code>. Leave blank to use the global default.</p>
+                <div className="flex gap-2">
+                  <Input value={groupHeading} onChange={(e) => setGroupHeading(e.target.value)} placeholder={tenantHeading} className="font-sans-ui" />
+                  <Button
+                    onClick={async () => {
+                      try { await adminAction("update_group_heading", { heading: groupHeading }); toast.success("Heading saved"); }
+                      catch (e: any) { toast.error(e.message); }
+                    }}
+                    className="bg-primary hover:bg-primary/90"
+                  ><Save className="w-4 h-4 mr-2" />Save</Button>
+                </div>
+              </Card>
               {listings.map(l => (
                 <ListingEditor key={l.id} listing={l} interest={interestCounts[l.id] ?? { yes: 0, no: 0 }} tenantUrl={tenantUrl} adminAction={adminAction} reload={load} />
               ))}
@@ -353,6 +369,7 @@ function ListingEditor({ listing, interest, tenantUrl, adminAction, reload }: { 
     heading: listing.heading ?? "",
     price: listing.price ?? "",
     deposit: listing.deposit ?? "",
+    application_fee: listing.application_fee ?? "",
     beds: listing.beds ?? "",
     baths: listing.baths ?? "",
     sqft: listing.sqft ?? "",
@@ -361,9 +378,11 @@ function ListingEditor({ listing, interest, tenantUrl, adminAction, reload }: { 
   });
   const [saving, setSaving] = useState(false);
   const [photoUrl, setPhotoUrl] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   // Pending photo changes — applied only on Save
-  const [pendingHidden, setPendingHidden] = useState<Record<string, boolean>>({}); // photo_id -> new is_hidden
-  const [pendingDelete, setPendingDelete] = useState<Set<string>>(new Set()); // photo_ids to delete
+  const [pendingHidden, setPendingHidden] = useState<Record<string, boolean>>({});
+  const [pendingDelete, setPendingDelete] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setForm({
@@ -371,6 +390,7 @@ function ListingEditor({ listing, interest, tenantUrl, adminAction, reload }: { 
       heading: listing.heading ?? "",
       price: listing.price ?? "",
       deposit: listing.deposit ?? "",
+      application_fee: listing.application_fee ?? "",
       beds: listing.beds ?? "",
       baths: listing.baths ?? "",
       sqft: listing.sqft ?? "",
@@ -391,6 +411,7 @@ function ListingEditor({ listing, interest, tenantUrl, adminAction, reload }: { 
         heading: form.heading || null,
         price: form.price === "" ? null : Number(form.price),
         deposit: form.deposit === "" ? null : Number(form.deposit),
+        application_fee: form.application_fee === "" ? null : Number(form.application_fee),
         beds: form.beds === "" ? null : Number(form.beds),
         baths: form.baths === "" ? null : Number(form.baths),
         sqft: form.sqft === "" ? null : Math.round(Number(form.sqft)),
@@ -439,6 +460,27 @@ function ListingEditor({ listing, interest, tenantUrl, adminAction, reload }: { 
       reload();
     } catch (e: any) { toast.error(e.message); }
   };
+  const uploadFiles = async (files: FileList | null) => {
+    if (!files || !files.length) return;
+    setUploading(true);
+    try {
+      for (const f of Array.from(files)) {
+        if (!f.type.startsWith("image/")) continue;
+        if (f.size > 8 * 1024 * 1024) { toast.error(`${f.name} is over 8MB`); continue; }
+        const dataUrl: string = await new Promise((res, rej) => {
+          const r = new FileReader();
+          r.onload = () => res(String(r.result));
+          r.onerror = () => rej(new Error("Read failed"));
+          r.readAsDataURL(f);
+        });
+        await adminAction("upload_photo", { listing_id: listing.id, data_url: dataUrl, filename: f.name });
+      }
+      toast.success(`Uploaded ${files.length} photo(s)`);
+      if (fileRef.current) fileRef.current.value = "";
+      reload();
+    } catch (e: any) { toast.error(e.message); }
+    setUploading(false);
+  };
 
   const visibleCount = listing.photos.filter(p => {
     if (pendingDelete.has(p.id)) return false;
@@ -473,6 +515,7 @@ function ListingEditor({ listing, interest, tenantUrl, adminAction, reload }: { 
         </div>
         <div><Label>Price ($)</Label><Input type="number" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /></div>
         <div><Label>Deposit ($)</Label><Input type="number" value={form.deposit} onChange={(e) => setForm({ ...form, deposit: e.target.value })} /></div>
+        <div><Label>Application fee ($)</Label><Input type="number" value={form.application_fee} onChange={(e) => setForm({ ...form, application_fee: e.target.value })} placeholder="Leave blank to hide" /></div>
         <div><Label>Beds</Label><Input type="number" value={form.beds} onChange={(e) => setForm({ ...form, beds: e.target.value })} /></div>
         <div><Label>Baths</Label><Input type="number" step="0.5" value={form.baths} onChange={(e) => setForm({ ...form, baths: e.target.value })} /></div>
         <div className="md:col-span-2"><Label>Square feet</Label><Input type="number" value={form.sqft} onChange={(e) => setForm({ ...form, sqft: e.target.value })} placeholder="Leave blank to hide" /></div>
@@ -496,9 +539,18 @@ function ListingEditor({ listing, interest, tenantUrl, adminAction, reload }: { 
 
       <div className="mt-6">
         <p className="font-sans-ui text-sm font-medium mb-2">Photos ({listing.photos.length} total · {visibleCount} will be visible after save)</p>
-        <div className="flex flex-col sm:flex-row gap-2 mb-3 font-sans-ui">
-          <Input value={photoUrl} onChange={(e) => setPhotoUrl(e.target.value)} placeholder="Paste image URL to add a photo" />
-          <Button onClick={addPhoto} disabled={!photoUrl.trim()} variant="outline">Add photo</Button>
+        <div className="flex flex-col gap-2 mb-3 font-sans-ui">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => uploadFiles(e.target.files)} />
+            <Button onClick={() => fileRef.current?.click()} disabled={uploading} variant="default" className="bg-primary hover:bg-primary/90">
+              {uploading ? "Uploading…" : "📷 Upload from device"}
+            </Button>
+            <span className="text-xs text-muted-foreground self-center">or paste an image URL ↓</span>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Input value={photoUrl} onChange={(e) => setPhotoUrl(e.target.value)} placeholder="https://..." />
+            <Button onClick={addPhoto} disabled={!photoUrl.trim()} variant="outline">Add by URL</Button>
+          </div>
         </div>
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
           {listing.photos.map(p => {
@@ -807,6 +859,7 @@ function FindListingsPanel({ fetched, adminAction, reload }: {
   const [beds, setBeds] = useState("any");
   const [baths, setBaths] = useState("any");
   const [types, setTypes] = useState<string[]>(["any"]);
+  const [howMany, setHowMany] = useState<string>("10");
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [hiddenPhotos, setHiddenPhotos] = useState<Record<string, Set<number>>>({});
@@ -821,7 +874,8 @@ function FindListingsPanel({ fetched, adminAction, reload }: {
     if (!/^\d{5}$/.test(zip.trim())) { toast.error("Enter a 5-digit ZIP"); return; }
     setBusy(true);
     try {
-      const res = await adminAction("find_listings", { zip: zip.trim(), beds, baths, types });
+      const limit = howMany === "all" ? "all" : Number(howMany);
+      const res = await adminAction("find_listings", { zip: zip.trim(), beds, baths, types, limit });
       toast.success(`Found ${res.fetched ?? 0} listing(s) (scanned ${res.scanned ?? 0})`);
       reload();
     } catch (e: any) { toast.error(e.message); }
@@ -863,8 +917,8 @@ function FindListingsPanel({ fetched, adminAction, reload }: {
     <div className="space-y-6">
       <Card className="p-6">
         <h3 className="font-semibold text-lg mb-1 flex items-center gap-2"><Search className="w-4 h-4 text-accent" />Find listings for me</h3>
-        <p className="font-sans-ui text-sm text-muted-foreground mb-4">Searches Zillow + Redfin by ZIP, beds, baths, and type. Results land below for review — you can hide ad photos before importing.</p>
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 font-sans-ui">
+        <p className="font-sans-ui text-sm text-muted-foreground mb-4">Searches Zillow rentals by ZIP, beds, baths, and type. Results land below — review and import the ones you want.</p>
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 font-sans-ui">
           <div><Label>ZIP</Label><Input value={zip} onChange={(e) => setZip(e.target.value)} placeholder="30341" /></div>
           <div><Label>Beds</Label>
             <select value={beds} onChange={(e) => setBeds(e.target.value)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
@@ -876,7 +930,12 @@ function FindListingsPanel({ fetched, adminAction, reload }: {
               {["any","1","1.5","2","2+","3+"].map(v => <option key={v} value={v}>{v}</option>)}
             </select>
           </div>
-          <div><Label>Type</Label>
+          <div><Label>How many</Label>
+            <select value={howMany} onChange={(e) => setHowMany(e.target.value)} className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
+              {["5","10","15","20","30","all"].map(v => <option key={v} value={v}>{v === "all" ? "All (max 40)" : v}</option>)}
+            </select>
+          </div>
+          <div className="col-span-2 sm:col-span-1"><Label>Type</Label>
             <div className="flex flex-wrap gap-1 mt-1">
               {["any","house","apartment","condo"].map(t => (
                 <Button key={t} type="button" size="sm" variant={types.includes(t) ? "default" : "outline"} onClick={() => toggleType(t)} className="h-8 text-xs">{t}</Button>
@@ -885,7 +944,7 @@ function FindListingsPanel({ fetched, adminAction, reload }: {
           </div>
         </div>
         <Button onClick={search} disabled={busy} className="mt-4 bg-primary hover:bg-primary/90">
-          <Search className="w-4 h-4 mr-2" />{busy ? "Searching… (~30s)" : "Search"}
+          <Search className="w-4 h-4 mr-2" />{busy ? "Searching Zillow…" : "Search Zillow"}
         </Button>
       </Card>
 
