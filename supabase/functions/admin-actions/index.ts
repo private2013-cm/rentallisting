@@ -250,13 +250,17 @@ Deno.serve(async (req) => {
       const { count: existingCount } = await supabase.from("listings").select("id", { count: "exact", head: true }).eq("link_group_id", g.id);
       let pos = existingCount ?? 0;
       const { data: bioRow } = await supabase.from("app_settings").select("value").eq("key", "default_bio").maybeSingle();
+      const { data: feeRow2 } = await supabase.from("app_settings").select("value").eq("key", "default_application_fee").maybeSingle();
       const defaultBio = (bioRow?.value as string) ?? "";
+      const defaultFee = typeof feeRow2?.value === "number" ? feeRow2.value : (feeRow2?.value ? Number(feeRow2.value) : null);
       for (const r of rows ?? []) {
         const { data: ins } = await supabase.from("listings").insert({
           link_group_id: g.id, source_url: r.source_url,
           address: r.address, price: r.price, deposit: null,
           beds: r.beds, baths: r.baths, sqft: r.sqft,
+          property_type: r.property_type,
           description: r.description, bio: defaultBio,
+          application_fee: defaultFee,
           position: pos++,
         }).select().single();
         if (ins && Array.isArray(r.photos) && r.photos.length) {
