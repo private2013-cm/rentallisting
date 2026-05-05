@@ -369,6 +369,7 @@ function ListingEditor({ listing, interest, tenantUrl, adminAction, reload }: { 
     heading: listing.heading ?? "",
     price: listing.price ?? "",
     deposit: listing.deposit ?? "",
+    application_fee: listing.application_fee ?? "",
     beds: listing.beds ?? "",
     baths: listing.baths ?? "",
     sqft: listing.sqft ?? "",
@@ -377,9 +378,11 @@ function ListingEditor({ listing, interest, tenantUrl, adminAction, reload }: { 
   });
   const [saving, setSaving] = useState(false);
   const [photoUrl, setPhotoUrl] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   // Pending photo changes — applied only on Save
-  const [pendingHidden, setPendingHidden] = useState<Record<string, boolean>>({}); // photo_id -> new is_hidden
-  const [pendingDelete, setPendingDelete] = useState<Set<string>>(new Set()); // photo_ids to delete
+  const [pendingHidden, setPendingHidden] = useState<Record<string, boolean>>({});
+  const [pendingDelete, setPendingDelete] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setForm({
@@ -387,6 +390,7 @@ function ListingEditor({ listing, interest, tenantUrl, adminAction, reload }: { 
       heading: listing.heading ?? "",
       price: listing.price ?? "",
       deposit: listing.deposit ?? "",
+      application_fee: listing.application_fee ?? "",
       beds: listing.beds ?? "",
       baths: listing.baths ?? "",
       sqft: listing.sqft ?? "",
@@ -407,6 +411,7 @@ function ListingEditor({ listing, interest, tenantUrl, adminAction, reload }: { 
         heading: form.heading || null,
         price: form.price === "" ? null : Number(form.price),
         deposit: form.deposit === "" ? null : Number(form.deposit),
+        application_fee: form.application_fee === "" ? null : Number(form.application_fee),
         beds: form.beds === "" ? null : Number(form.beds),
         baths: form.baths === "" ? null : Number(form.baths),
         sqft: form.sqft === "" ? null : Math.round(Number(form.sqft)),
