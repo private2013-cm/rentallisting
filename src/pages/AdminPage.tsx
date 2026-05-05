@@ -460,6 +460,27 @@ function ListingEditor({ listing, interest, tenantUrl, adminAction, reload }: { 
       reload();
     } catch (e: any) { toast.error(e.message); }
   };
+  const uploadFiles = async (files: FileList | null) => {
+    if (!files || !files.length) return;
+    setUploading(true);
+    try {
+      for (const f of Array.from(files)) {
+        if (!f.type.startsWith("image/")) continue;
+        if (f.size > 8 * 1024 * 1024) { toast.error(`${f.name} is over 8MB`); continue; }
+        const dataUrl: string = await new Promise((res, rej) => {
+          const r = new FileReader();
+          r.onload = () => res(String(r.result));
+          r.onerror = () => rej(new Error("Read failed"));
+          r.readAsDataURL(f);
+        });
+        await adminAction("upload_photo", { listing_id: listing.id, data_url: dataUrl, filename: f.name });
+      }
+      toast.success(`Uploaded ${files.length} photo(s)`);
+      if (fileRef.current) fileRef.current.value = "";
+      reload();
+    } catch (e: any) { toast.error(e.message); }
+    setUploading(false);
+  };
 
   const visibleCount = listing.photos.filter(p => {
     if (pendingDelete.has(p.id)) return false;
