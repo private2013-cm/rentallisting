@@ -156,6 +156,7 @@ Deno.serve(async (req) => {
         scrapeStats = { listings_total: lTot ?? 0, links_total: gTot ?? 0, visits_total: vTot ?? 0 };
       }
 
+      const groupHeading = (group as any)?.tenant_heading ?? null;
       return new Response(JSON.stringify({
         groupId: group?.id ?? null,
         ownerTelegramId: (group as any)?.owner_telegram_id ?? null,
@@ -165,7 +166,8 @@ Deno.serve(async (req) => {
         defaultBio: typeof bioRow.data?.value === "string" ? bioRow.data.value : "",
         defaultDescription: typeof descRow.data?.value === "string" ? descRow.data.value : "",
         defaultApplicationFee: typeof feeRow.data?.value === "number" ? feeRow.data.value : (feeRow.data?.value ? Number(feeRow.data.value) : null),
-        tenantHeading: typeof headingRow.data?.value === "string" ? headingRow.data.value : "Private landlord rental listing",
+        tenantHeading: groupHeading ?? (typeof headingRow.data?.value === "string" ? headingRow.data.value : "Private landlord rental listing"),
+        groupHeading,
         users,
         interests: interestsRes.data ?? [],
         chatMessages,
