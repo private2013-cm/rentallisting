@@ -1,0 +1,1 @@
+drop policy if exists "public read listing photos" on storage.objects;
