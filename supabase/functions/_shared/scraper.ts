@@ -1,4 +1,4 @@
-// Zillow-only rental scraper. Strict photo whitelist, fast parallel fetches.
+// Zillow-only rental/sale scraper. Strict photo whitelist, fast parallel fetches.
 // Photos: only the main listing gallery photos (photos.zillowstatic.com/fp/...).
 
 export interface ScrapedListing {
@@ -14,6 +14,12 @@ export interface ScrapedListing {
   photos: string[];
 }
 
+export interface SearchResult {
+  urls: string[];
+  modeUsed: "rent" | "sale";
+  fallbackUsed: boolean;
+}
+
 const FIRECRAWL_URL = "https://api.firecrawl.dev/v2/scrape";
 const FIRECRAWL_SEARCH = "https://api.firecrawl.dev/v2/search";
 
@@ -21,8 +27,11 @@ function uniq<T>(arr: T[]): T[] { return Array.from(new Set(arr)); }
 
 export function detectSource(_url: string): "zillow" { return "zillow"; }
 
-// Zillow gallery photos only — exclude "similar listings" / map / agent assets
 const ZILLOW_PHOTO_RE = /https:\/\/photos\.zillowstatic\.com\/fp\/[a-zA-Z0-9_-]+(?:-uncropped_scaled_within_\d+_\d+|-cc_ft_\d+)?\.(?:jpg|webp|jpeg)/gi;
+const BLOCKED_PHOTO_PATH_RE = /(aside|header|footer|recommend|recommended|similar|nearby|map|staticmap|upsell|ad|sponsor|thumb|thumbnail|logo|icon|brand|broker|agent)/i;
+const GALLERY_PATH_RE = /(photo|photos|gallery|carousel|viewer|media|responsivePhotos|originalPhotos|hugePhotos|listing)/i;
+
+type PhotoCandidate = { url: string; width: number; height: number };
 
 function fingerprint(u: string): string {
   return u
@@ -38,6 +47,12 @@ function widthOf(s: string): number {
     s.match(/(\d{3,4})x\d{3,4}/)?.[1] ?? 0
   );
 }
+function heightOf(s: string): number {
+  return Number(
+    s.match(/_within_\d+_(\d+)/)?.[1] ??
+    s.match(/\d{3,4}x(\d{3,4})/)?.[1] ?? 0
+  );
+}
 function dedupeKeepLargest(urls: string[]): string[] {
   const map = new Map<string, string>();
   for (const u of urls) {
@@ -48,32 +63,111 @@ function dedupeKeepLargest(urls: string[]): string[] {
   return Array.from(map.values());
 }
 
-// Pull the **gallery** photos. Zillow embeds them in __NEXT_DATA__ JSON
-// inside `responsivePhotos`/`hugePhotos`/`originalPhotos` arrays — those
-// are the ones shown in the "1/N" carousel at the top.
-function extractGalleryPhotos(html: string, markdown: string): string[] {
-  const collected: string[] = [];
+function normalizePhotoUrl(url: string): string | null {
+  const clean = url.split("?")[0].trim();
+  return /^https:\/\/photos\.zillowstatic\.com\/fp\//i.test(clean) ? clean : null;
+}
 
-  // 1) Try the JSON blob first — gives us only the main carousel photos.
-  const jsonMatch = html.match(/<script[^>]+id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
-  if (jsonMatch) {
-    try {
-      // Pull every photos.zillowstatic.com URL from the embedded JSON.
-      const blob = jsonMatch[1];
-      const inJson = blob.match(ZILLOW_PHOTO_RE) ?? [];
-      // Filter to ones likely to be "responsive/huge" gallery sizes
-      const big = inJson.filter(u => /_within_(\d{3,4})_/.test(u) || /-cc_ft_\d{3,4}/.test(u));
-      collected.push(...(big.length ? big : inJson));
-    } catch (_) { /* fall through */ }
+function candidateFromUrl(url: string, width?: number | null, height?: number | null): PhotoCandidate | null {
+  const normalized = normalizePhotoUrl(url);
+  if (!normalized) return null;
+  const finalWidth = Math.max(Number(width ?? 0), widthOf(normalized));
+  const finalHeight = Math.max(Number(height ?? 0), heightOf(normalized));
+  if ((finalWidth && finalWidth < 600) || (finalHeight && finalHeight < 400)) return null;
+  return { url: normalized, width: finalWidth, height: finalHeight };
+}
+
+function pickBestCandidate(candidates: PhotoCandidate[]): PhotoCandidate | null {
+  if (!candidates.length) return null;
+  return [...candidates].sort((a, b) => {
+    const areaA = a.width * a.height;
+    const areaB = b.width * b.height;
+    if (areaB !== areaA) return areaB - areaA;
+    return b.width - a.width;
+  })[0];
+}
+
+function extractCandidateList(node: unknown): PhotoCandidate[] {
+  const candidates: PhotoCandidate[] = [];
+  const visit = (value: unknown) => {
+    if (!value || typeof value !== "object") return;
+    const obj = value as Record<string, unknown>;
+
+    for (const key of ["mixedSources", "sources", "jpeg", "jpg", "webp", "responsiveUrls", "urls"]) {
+      const arr = obj[key];
+      if (Array.isArray(arr)) arr.forEach(visit);
+    }
+
+    for (const key of ["url", "src", "href", "originalUrl", "imageUrl", "viewerUrl"]) {
+      const raw = obj[key];
+      if (typeof raw === "string") {
+        const candidate = candidateFromUrl(raw, Number(obj.width ?? 0), Number(obj.height ?? 0));
+        if (candidate) candidates.push(candidate);
+      }
+    }
+  };
+
+  visit(node);
+  return candidates;
+}
+
+function extractGalleryPhotosFromNextData(html: string): string[] {
+  const match = html.match(/<script[^>]+id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
+  if (!match) return [];
+
+  try {
+    const root = JSON.parse(match[1]);
+    const ordered: string[] = [];
+    const seenObjects = new WeakSet<object>();
+
+    const walk = (node: unknown, path: string[] = []) => {
+      if (!node || typeof node !== "object") return;
+      const obj = node as Record<string, unknown>;
+      if (seenObjects.has(obj)) return;
+      seenObjects.add(obj);
+
+      const joinedPath = path.join(".");
+      const blocked = BLOCKED_PHOTO_PATH_RE.test(joinedPath);
+      const looksLikeGallery = GALLERY_PATH_RE.test(joinedPath) || Object.keys(obj).some((key) => GALLERY_PATH_RE.test(key));
+
+      if (!blocked && looksLikeGallery) {
+        const best = pickBestCandidate(extractCandidateList(obj));
+        if (best) ordered.push(best.url);
+      }
+
+      for (const [key, value] of Object.entries(obj)) {
+        if (typeof value === "object" && value !== null) walk(value, [...path, key]);
+      }
+    };
+
+    walk(root, []);
+    return dedupeKeepLargest(uniq(ordered));
+  } catch (_) {
+    return [];
   }
+}
 
-  // 2) Fallback to scanning whole markdown/html
-  if (collected.length === 0) {
-    collected.push(...(markdown.match(ZILLOW_PHOTO_RE) ?? []));
-    collected.push(...(html.match(ZILLOW_PHOTO_RE) ?? []));
-  }
+function extractGalleryPhotosFromViewerHtml(html: string): string[] {
+  const viewerChunks = Array.from(
+    html.matchAll(/<(?:div|section)[^>]*(?:carousel|gallery|viewer|media)[^>]*>[\s\S]{0,50000}?<\/(?:div|section)>/gi),
+  ).map((m) => m[0]);
+  if (!viewerChunks.length) return [];
+  const urls = viewerChunks
+    .flatMap((chunk) => Array.from(chunk.matchAll(ZILLOW_PHOTO_RE)).map((m) => m[0]))
+    .map((url) => normalizePhotoUrl(url))
+    .filter((url): url is string => !!url)
+    .filter((url) => {
+      const width = widthOf(url);
+      const height = heightOf(url);
+      return (!width || width >= 600) && (!height || height >= 400);
+    });
+  return dedupeKeepLargest(uniq(urls));
+}
 
-  return dedupeKeepLargest(uniq(collected));
+function extractGalleryPhotos(html: string, _markdown: string): string[] {
+  const fromJson = extractGalleryPhotosFromNextData(html);
+  if (fromJson.length) return fromJson;
+  return extractGalleryPhotosFromViewerHtml(html);
 }
 
 function parsePrice(text: string): number | null {
@@ -85,7 +179,7 @@ function parsePrice(text: string): number | null {
   const m2 = text.match(/\$\s*([\d,]+)/);
   if (m2) {
     const n = parseInt(m2[1].replace(/,/g, ""), 10);
-    if (!isNaN(n) && n > 100 && n < 100000) return n;
+    if (!isNaN(n) && n > 100 && n < 10000000) return n;
   }
   return null;
 }
@@ -132,7 +226,7 @@ export async function scrapeListing(url: string): Promise<ScrapedListing> {
         url,
         formats: ["markdown", "html"],
         onlyMainContent: false,
-        waitFor: 2500,
+        waitFor: 1800,
       }),
     });
     if (!res.ok) {
@@ -157,11 +251,11 @@ export async function scrapeListing(url: string): Promise<ScrapedListing> {
 
     const result: ScrapedListing = {
       source: "zillow", source_url: url, address,
-      price: parsePrice(markdown),
+      price: parsePrice(markdown || html),
       beds: bedsMatch ? Number(bedsMatch[1]) : null,
       baths: bathsMatch ? Number(bathsMatch[1]) : null,
       sqft: sqftMatch ? Number(sqftMatch[1].replace(/,/g, "")) : null,
-      property_type: parsePropertyType(markdown),
+      property_type: parsePropertyType(markdown || html),
       description,
       photos,
     };
@@ -175,56 +269,68 @@ export async function scrapeListing(url: string): Promise<ScrapedListing> {
 
 export const scrapeZillow = scrapeListing;
 
-// ---- Search Zillow rentals ----
 export interface SearchFilters {
   zip: string;
   beds: "any" | string;
   baths: "any" | string;
   types: string[];
   limit?: number;
+  mode?: "rent" | "sale";
 }
 
-export async function searchRentals(filters: SearchFilters): Promise<string[]> {
-  const apiKey = Deno.env.get("FIRECRAWL_API_KEY");
-  if (!apiKey) return [];
-  const limit = Math.min(Math.max(filters.limit ?? 8, 1), 40);
-
+function buildQueries(filters: SearchFilters, mode: "rent" | "sale") {
   const typeStr = filters.types.includes("any") || filters.types.length === 0
     ? ""
     : ` ${filters.types.join(" or ")}`;
   const bedStr = filters.beds === "any" ? "" : ` ${filters.beds} bedroom`;
   const bathStr = filters.baths === "any" ? "" : ` ${filters.baths} bath`;
+  const market = mode === "sale" ? "for sale" : "for rent";
 
-  // Run multiple Zillow-targeted queries in parallel for breadth
-  const queries = [
-    `site:zillow.com/homedetails rent ${filters.zip}${bedStr}${bathStr}${typeStr}`,
-    `site:zillow.com "for rent" ${filters.zip}${bedStr}${typeStr}`,
-    `zillow.com homedetails ${filters.zip} for rent${bedStr}${typeStr}`,
+  return [
+    `site:zillow.com/homedetails ${filters.zip} ${market}${bedStr}${bathStr}${typeStr}`,
+    `site:zillow.com/homedetails zillow ${filters.zip} ${market}${bedStr}${typeStr}`,
+    `zillow homedetails ${filters.zip} ${market}${bedStr}${bathStr}${typeStr}`,
   ];
+}
 
-  const collect = async (query: string): Promise<string[]> => {
-    try {
-      const res = await fetch(FIRECRAWL_SEARCH, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ query, limit: Math.min(limit + 5, 25) }),
-      });
-      if (!res.ok) {
-        console.log(`Firecrawl search ${res.status}: ${(await res.text()).slice(0, 200)}`);
-        return [];
-      }
-      const json = await res.json();
-      // v2 returns { data: { web: [...] } } OR { data: [...] }
-      const items = json?.data?.web ?? json?.data ?? json?.results?.web ?? [];
-      return items.map((r: any) => r.url ?? r.link).filter((u: any) => typeof u === "string");
-    } catch (e) {
-      console.log("search err", (e as Error).message);
+async function runSearchQuery(apiKey: string, query: string, limit: number): Promise<string[]> {
+  try {
+    const res = await fetch(FIRECRAWL_SEARCH, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ query, limit: Math.min(limit + 6, 25) }),
+    });
+    if (!res.ok) {
+      console.log(`Firecrawl search ${res.status}: ${(await res.text()).slice(0, 200)}`);
       return [];
     }
+    const json = await res.json();
+    const items = json?.data?.web ?? json?.data ?? json?.results?.web ?? [];
+    return items.map((r: any) => r.url ?? r.link).filter((u: any) => typeof u === "string");
+  } catch (e) {
+    console.log("search err", (e as Error).message);
+    return [];
+  }
+}
+
+export async function searchRentals(filters: SearchFilters): Promise<SearchResult> {
+  const apiKey = Deno.env.get("FIRECRAWL_API_KEY");
+  if (!apiKey) return { urls: [], modeUsed: filters.mode ?? "rent", fallbackUsed: false };
+  const limit = Math.min(Math.max(filters.limit ?? 8, 1), 40);
+  const requestedMode = filters.mode ?? "rent";
+
+  const collect = async (mode: "rent" | "sale") => {
+    const queries = buildQueries(filters, mode);
+    const all = (await Promise.all(queries.map((query) => runSearchQuery(apiKey, query, limit)))).flat();
+    const isDetail = (u: string) => /zillow\.com\/homedetails\//i.test(u);
+    return dedupeKeepLargest(uniq(all.filter(isDetail))).slice(0, limit);
   };
 
-  const all = (await Promise.all(queries.map(collect))).flat();
-  // Strict: only Zillow homedetails pages
-  const isDetail = (u: string) => /zillow\.com\/homedetails\//i.test(u);
-  return uniq(all.filter(isDetail)).slice(0, limit);
+  const first = await collect(requestedMode);
+  if (first.length || requestedMode === "sale") {
+    return { urls: first, modeUsed: requestedMode, fallbackUsed: false };
+  }
+
+  const fallback = await collect("sale");
+  return { urls: fallback, modeUsed: "sale", fallbackUsed: fallback.length > 0 };
 }
