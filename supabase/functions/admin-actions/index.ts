@@ -68,7 +68,9 @@ Deno.serve(async (req) => {
       let visitorStats: any = { total: 0, last24h: 0, recent: [] };
       let scrapeStats: any = { listings_total: 0, links_total: 0, visits_total: 0 };
 
+      let ownerDefaults: any = null;
       if (group) {
+        ownerDefaults = (await supabase.from("owner_settings").select("default_bio, default_description, default_application_fee").eq("owner_telegram_id", (group as any).owner_telegram_id).maybeSingle()).data;
         const { data } = await supabase
           .from("listings")
           .select("*, listing_photos(id, url, is_hidden, position)")
@@ -105,7 +107,7 @@ Deno.serve(async (req) => {
             .eq("tenant_telegram_id", tid).eq("sender", "super").eq("read_by_tenant", false);
 
           const { data: fl } = await supabase.from("fetched_listings").select("*")
-            .eq("owner_telegram_id", tid).eq("status", "pending")
+            .eq("owner_telegram_id", tid).eq("status", "pending").eq("target_group_id", group.id)
             .order("created_at", { ascending: false }).limit(50);
           fetched = fl ?? [];
         }
@@ -163,9 +165,9 @@ Deno.serve(async (req) => {
         groups: groupsOut,
         listings,
         applications,
-        defaultBio: typeof bioRow.data?.value === "string" ? bioRow.data.value : "",
-        defaultDescription: typeof descRow.data?.value === "string" ? descRow.data.value : "",
-        defaultApplicationFee: typeof feeRow.data?.value === "number" ? feeRow.data.value : (feeRow.data?.value ? Number(feeRow.data.value) : null),
+        defaultBio: typeof ownerDefaults?.default_bio === "string" ? ownerDefaults.default_bio : (typeof bioRow.data?.value === "string" ? bioRow.data.value : ""),
+        defaultDescription: typeof ownerDefaults?.default_description === "string" ? ownerDefaults.default_description : (typeof descRow.data?.value === "string" ? descRow.data.value : ""),
+        defaultApplicationFee: ownerDefaults?.default_application_fee != null ? Number(ownerDefaults.default_application_fee) : (typeof feeRow.data?.value === "number" ? feeRow.data.value : (feeRow.data?.value ? Number(feeRow.data.value) : null)),
         tenantHeading: groupHeading ?? (typeof headingRow.data?.value === "string" ? headingRow.data.value : "Private landlord rental listing"),
         groupHeading,
         users,
@@ -205,15 +207,28 @@ Deno.serve(async (req) => {
       const g = requireGroup();
       const ownerId = Number((g as any).owner_telegram_id);
       if (!ownerId) throw new Error("This group has no owner Telegram ID.");
-      const { zip, beds, baths, types, limit } = body;
+      const { zip, beds, baths, types, limit, mode } = body;
       const fnRes = await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/find-listings`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}` },
-        body: JSON.stringify({ owner_telegram_id: ownerId, zip, beds, baths, types, limit }),
+        body: JSON.stringify({ owner_telegram_id: ownerId, zip, beds, baths, types, limit, mode, target_group_id: g.id }),
       });
       const out = await fnRes.json();
       if (!fnRes.ok) throw new Error(out?.error ?? "Find listings failed");
       return new Response(JSON.stringify(out), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    else if (action === "update_owner_defaults") {
+      const g = requireGroup();
+      const ownerId = Number((g as any).owner_telegram_id);
+      if (!ownerId) throw new Error("This listing group has no owner.");
+      const values = body.values ?? {};
+      assertOk(await supabase.from("owner_settings").upsert({
+        owner_telegram_id: ownerId,
+        default_bio: typeof values.default_bio === "string" ? values.default_bio : null,
+        default_description: typeof values.default_description === "string" ? values.default_description : null,
+        default_application_fee: values.default_application_fee == null ? null : Number(values.default_application_fee),
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "owner_telegram_id" }), "Update owner defaults failed");
     }
     else if (action === "update_group_heading") {
       const g = requireGroup();
