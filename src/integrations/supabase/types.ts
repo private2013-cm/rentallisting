@@ -225,6 +225,7 @@ export type Database = {
           source_url: string
           sqft: number | null
           status: string
+          target_group_id: string | null
         }
         Insert: {
           address?: string | null
@@ -242,6 +243,7 @@ export type Database = {
           source_url: string
           sqft?: number | null
           status?: string
+          target_group_id?: string | null
         }
         Update: {
           address?: string | null
@@ -259,8 +261,17 @@ export type Database = {
           source_url?: string
           sqft?: number | null
           status?: string
+          target_group_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "fetched_listings_target_group_id_fkey"
+            columns: ["target_group_id"]
+            isOneToOne: false
+            referencedRelation: "link_groups"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       link_groups: {
         Row: {
@@ -420,6 +431,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      owner_settings: {
+        Row: {
+          created_at: string
+          default_application_fee: number | null
+          default_bio: string | null
+          default_description: string | null
+          id: string
+          owner_telegram_id: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          default_application_fee?: number | null
+          default_bio?: string | null
+          default_description?: string | null
+          id?: string
+          owner_telegram_id: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          default_application_fee?: number | null
+          default_bio?: string | null
+          default_description?: string | null
+          id?: string
+          owner_telegram_id?: number
+          updated_at?: string
+        }
+        Relationships: []
       }
       visitor_logs: {
         Row: {
