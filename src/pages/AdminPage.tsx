@@ -538,7 +538,14 @@ function ListingEditor({ listing, interest, tenantUrl, adminAction, reload }: { 
         {dirty && <span className="text-xs text-accent font-sans-ui">● Unsaved photo changes</span>}
       </div>
 
-      <div className="mt-6">
+      <div
+        className="mt-6"
+        onDragOver={(e) => { e.preventDefault(); }}
+        onDrop={(e) => {
+          e.preventDefault();
+          if (e.dataTransfer?.files?.length) uploadFiles(e.dataTransfer.files);
+        }}
+      >
         <p className="font-sans-ui text-sm font-medium mb-2">Photos ({listing.photos.length} total · {visibleCount} will be visible after save)</p>
         <div className="flex flex-col gap-2 mb-3 font-sans-ui">
           <div className="flex flex-col sm:flex-row gap-2">
@@ -546,7 +553,7 @@ function ListingEditor({ listing, interest, tenantUrl, adminAction, reload }: { 
             <Button onClick={() => fileRef.current?.click()} disabled={uploading} variant="default" className="bg-primary hover:bg-primary/90">
               {uploading ? "Uploading…" : "📷 Upload from device"}
             </Button>
-            <span className="text-xs text-muted-foreground self-center">or paste an image URL ↓</span>
+            <span className="text-xs text-muted-foreground self-center">or drag & drop images here · or paste URL ↓</span>
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
             <Input value={photoUrl} onChange={(e) => setPhotoUrl(e.target.value)} placeholder="https://..." />
