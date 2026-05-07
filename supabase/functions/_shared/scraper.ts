@@ -114,37 +114,11 @@ function extractCandidateList(node: unknown): PhotoCandidate[] {
 function extractGalleryPhotosFromNextData(html: string): string[] {
   const match = html.match(/<script[^>]+id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
   if (!match) return [];
-
-  try {
-    const root = JSON.parse(match[1]);
-    const ordered: string[] = [];
-    const seenObjects = new WeakSet<object>();
-
-    const walk = (node: unknown, path: string[] = []) => {
-      if (!node || typeof node !== "object") return;
-      const obj = node as Record<string, unknown>;
-      if (seenObjects.has(obj)) return;
-      seenObjects.add(obj);
-
-      const joinedPath = path.join(".");
-      const blocked = BLOCKED_PHOTO_PATH_RE.test(joinedPath);
-      const looksLikeGallery = GALLERY_PATH_RE.test(joinedPath) || Object.keys(obj).some((key) => GALLERY_PATH_RE.test(key));
-
-      if (!blocked && looksLikeGallery) {
-        const best = pickBestCandidate(extractCandidateList(obj));
-        if (best) ordered.push(best.url);
-      }
-
-      for (const [key, value] of Object.entries(obj)) {
-        if (typeof value === "object" && value !== null) walk(value, [...path, key]);
-      }
-    };
-
-    walk(root, []);
-    return dedupeKeepLargest(uniq(ordered));
-  } catch (_) {
-    return [];
-  }
+  const raw = match[1];
+  // Pull any address-photo variants from the raw JSON text (escaped slashes too).
+  const re = /https:\\?\/\\?\/photos\.zillowstatic\.com\\?\/fp\\?\/[a-zA-Z0-9_-]+(?:-cc_ft_\d+|-uncropped_scaled_within_\d+_\d+)\.(?:jpg|jpeg|webp)/gi;
+  const matches = Array.from(raw.matchAll(re)).map((m) => m[0].replace(/\\\//g, "/"));
+  return dedupeKeepLargest(uniq(matches));
 }
 
 function extractGalleryPhotosFromViewerHtml(html: string): string[] {
@@ -174,12 +148,15 @@ function extractCarouselPhotosFromHtml(html: string): string[] {
 }
 
 function extractGalleryPhotos(html: string, _markdown: string): string[] {
-  // Primary: any cc_ft_/uncropped_scaled_within_ URL anywhere in HTML — these are the address's photos
+  // Combine all sources — Zillow lazy-loads carousel, so the FULL set lives in __NEXT_DATA__
+  // JSON (responsivePhotos / hugePhotos), while the rendered HTML only has the first 1–2.
+  // Concatenate, then dedupe by fingerprint keeping the largest variant.
   const fromHtml = extractCarouselPhotosFromHtml(html);
-  if (fromHtml.length) return fromHtml;
   const fromJson = extractGalleryPhotosFromNextData(html);
-  if (fromJson.length) return fromJson;
-  return extractGalleryPhotosFromViewerHtml(html);
+  const fromViewer = extractGalleryPhotosFromViewerHtml(html);
+  const combined = dedupeKeepLargest(uniq([...fromJson, ...fromHtml, ...fromViewer]));
+  if (combined.length) return combined;
+  return [];
 }
 
 function parsePrice(text: string): number | null {
