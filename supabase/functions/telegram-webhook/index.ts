@@ -365,6 +365,36 @@ async function handleUpdate(update: any, req: Request) {
       await showListingPicker(chatId, fromId);
       return;
     }
+    // Per-listing fetched-results actions
+    if (data.startsWith("fladd:") || data.startsWith("fldel:")) {
+      const [op, flid] = data.split(":");
+      const { data: fl } = await supabase.from("fetched_listings")
+        .select("*").eq("id", flid).maybeSingle();
+      if (!fl || Number(fl.owner_telegram_id) !== fromId) {
+        await sendMessage(chatId, "⚠️ Not found or not yours."); return;
+      }
+      if (op === "fldel") {
+        await supabase.from("fetched_listings").update({ status: "dismissed" }).eq("id", flid);
+        try { await tg("editMessageReplyMarkup", { chat_id: chatId, message_id: cb.message?.message_id, reply_markup: { inline_keyboard: [[{ text: "❌ Cancelled", callback_data: "noop" }]] } }); } catch (_) {}
+        return;
+      }
+      const groupId = fl.target_group_id;
+      if (!groupId) { await sendMessage(chatId, "⚠️ No target group."); return; }
+      const { count } = await supabase.from("listings").select("*", { count: "exact", head: true }).eq("link_group_id", groupId);
+      const { data: listing, error } = await supabase.from("listings").insert({
+        link_group_id: groupId, source_url: fl.source_url,
+        address: fl.address, price: fl.price, beds: fl.beds, baths: fl.baths,
+        sqft: fl.sqft, description: fl.description, position: count ?? 0,
+      }).select().single();
+      if (error || !listing) { await sendMessage(chatId, `❌ ${error?.message}`); return; }
+      const photos = Array.isArray(fl.photos) ? fl.photos : [];
+      if (photos.length) {
+        await supabase.from("listing_photos").insert(photos.map((url: string, i: number) => ({ listing_id: listing.id, url, position: i })));
+      }
+      await supabase.from("fetched_listings").update({ status: "imported" }).eq("id", flid);
+      try { await tg("editMessageReplyMarkup", { chat_id: chatId, message_id: cb.message?.message_id, reply_markup: { inline_keyboard: [[{ text: "✅ Added to bundle", callback_data: "noop" }]] } }); } catch (_) {}
+      return;
+    }
     if (data.startsWith("find:")) {
       const st = await getState(stateId);
       const f: FindFilters = (st?.data as any) ?? { zip: "", beds: "any", baths: "any", types: ["any"] };
