@@ -374,17 +374,60 @@ async function handleUpdate(update: any, req: Request) {
         if (!f.zip) { await sendMessage(chatId, "Send /find again."); return; }
         await sendMessage(chatId, `🔎 Searching ZIP <b>${f.zip}</b>… this may take ~30s.`);
         try {
+          // Use most recent group as the import target so admin link works
+          const { data: grp } = await supabase
+            .from("link_groups").select("id, slug")
+            .eq("owner_telegram_id", fromId)
+            .order("created_at", { ascending: false }).limit(1).maybeSingle();
+          let targetGroupId = grp?.id ?? null;
+          let targetSlug = grp?.slug ?? null;
+          if (!targetGroupId) {
+            const newSlug = slug();
+            const { data: newGrp } = await supabase.from("link_groups")
+              .insert({ slug: newSlug, owner_telegram_id: fromId }).select().single();
+            await supabase.from("admin_access").insert({ link_group_id: newGrp!.id });
+            targetGroupId = newGrp!.id; targetSlug = newGrp!.slug;
+          }
           const res = await fetch(`${SUPABASE_URL}/functions/v1/find-listings`, {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE_KEY}` },
-            body: JSON.stringify({ owner_telegram_id: fromId, zip: f.zip, beds: f.beds, baths: f.baths, types: f.types, limit: 8 }),
+            body: JSON.stringify({ owner_telegram_id: fromId, zip: f.zip, beds: f.beds, baths: f.baths, types: f.types, limit: 10, target_group_id: targetGroupId }),
           });
           const out = await res.json();
           if (!res.ok) throw new Error(out?.error ?? "Search failed");
           const base = await publicBase(req);
-          const { data: grp } = await supabase.from("link_groups").select("slug").eq("owner_telegram_id", fromId).order("created_at", { ascending: false }).limit(1).maybeSingle();
-          const reviewUrl = grp ? `${base}/admin/${grp.slug}` : `${base}/admin`;
-          await sendMessage(chatId, `✅ Found <b>${out.fetched ?? 0}</b> listing(s) (scanned ${out.scanned ?? 0}).\n\nReview & import them on the <a href="${reviewUrl}">admin page → Find listings</a>.`);
+          const { data: access } = await supabase.from("admin_access").select("admin_key").eq("link_group_id", targetGroupId).maybeSingle();
+          const reviewUrl = `${base}/admin/${targetSlug}${access?.admin_key ? `?key=${access.admin_key}` : ""}`;
+
+          await sendMessage(chatId, `✅ Found <b>${out.fetched ?? 0}</b> listing(s) (scanned ${out.scanned ?? 0}).\n\nReview & manage on your private admin page:\n${reviewUrl}`, {
+            reply_markup: { inline_keyboard: [[{ text: "⚙️ Open admin", url: reviewUrl }]] },
+          });
+
+          // Send each fetched listing as its own card with Add/Cancel buttons
+          const { data: fetched } = await supabase.from("fetched_listings")
+            .select("id, address, price, beds, baths, sqft, photos, source_url")
+            .eq("owner_telegram_id", fromId).eq("target_group_id", targetGroupId).eq("status", "pending")
+            .order("created_at", { ascending: false }).limit(out.fetched ?? 0);
+          for (const fl of (fetched ?? [])) {
+            const photoCount = Array.isArray(fl.photos) ? fl.photos.length : 0;
+            const caption =
+              `📍 ${fl.address ?? "Address pending"}\n` +
+              `💰 $${fl.price ?? "—"} · 🛏 ${fl.beds ?? "—"} · 🚿 ${fl.baths ?? "—"} · 📐 ${fl.sqft ?? "—"}\n` +
+              `📸 ${photoCount} photo(s)\n${fl.source_url}`;
+            const kb = {
+              inline_keyboard: [[
+                { text: "➕ Add to bundle", callback_data: `fladd:${fl.id}` },
+                { text: "❌ Cancel", callback_data: `fldel:${fl.id}` },
+              ]],
+            };
+            const firstPhoto = Array.isArray(fl.photos) && fl.photos[0];
+            if (firstPhoto) {
+              try { await tg("sendPhoto", { chat_id: chatId, photo: firstPhoto, caption, reply_markup: kb }); }
+              catch { await sendMessage(chatId, caption, { reply_markup: kb }); }
+            } else {
+              await sendMessage(chatId, caption, { reply_markup: kb });
+            }
+          }
         } catch (e) {
           await sendMessage(chatId, `❌ ${(e as Error).message}`);
         }
