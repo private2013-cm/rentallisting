@@ -245,6 +245,7 @@ const AdminPage = () => {
                   ><Save className="w-4 h-4 mr-2" />Save</Button>
                 </div>
               </Card>
+              <BulkListingsBar listings={listings} adminAction={adminAction} reload={load} />
               {listings.map(l => (
                 <ListingEditor key={l.id} listing={l} interest={interestCounts[l.id] ?? { yes: 0, no: 0 }} tenantUrl={tenantUrl} adminAction={adminAction} reload={load} />
               ))}
@@ -362,6 +363,52 @@ const AdminPage = () => {
     </main>
   );
 };
+
+function BulkListingsBar({ listings, adminAction, reload }: { listings: { id: string; address: string | null }[]; adminAction: (a: string, b?: Record<string, unknown>) => Promise<any>; reload: () => void }) {
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const allChecked = listings.length > 0 && selected.size === listings.length;
+  const toggleAll = () => setSelected(allChecked ? new Set() : new Set(listings.map((l) => l.id)));
+  const toggleOne = (id: string) => {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setSelected(next);
+  };
+  const deleteSelected = async () => {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+    if (!confirm(`Delete ${ids.length} listing(s)? This cannot be undone.`)) return;
+    try {
+      await adminAction("delete_listings", { ids });
+      toast.success(`Deleted ${ids.length}`);
+      setSelected(new Set());
+      reload();
+    } catch (e: any) { toast.error(e.message); }
+  };
+  if (listings.length === 0) return null;
+  return (
+    <Card className="p-4 font-sans-ui">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={allChecked} onChange={toggleAll} />
+          <span className="text-muted-foreground">Select all ({selected.size}/{listings.length})</span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {listings.map((l) => (
+            <label key={l.id} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded bg-secondary/50 cursor-pointer">
+              <input type="checkbox" checked={selected.has(l.id)} onChange={() => toggleOne(l.id)} />
+              <span className="truncate max-w-[12rem]">{l.address ?? "Untitled"}</span>
+            </label>
+          ))}
+        </div>
+        {selected.size > 0 && (
+          <Button onClick={deleteSelected} variant="destructive" size="sm">
+            <Trash2 className="w-4 h-4 mr-1" />Delete {selected.size}
+          </Button>
+        )}
+      </div>
+    </Card>
+  );
+}
 
 function ListingEditor({ listing, interest, tenantUrl, adminAction, reload }: { listing: Listing & { photos: Photo[] }; interest: { yes: number; no: number }; tenantUrl: string; adminAction: (action: string, body?: Record<string, unknown>) => Promise<any>; reload: () => void }) {
   const [form, setForm] = useState({
@@ -537,7 +584,14 @@ function ListingEditor({ listing, interest, tenantUrl, adminAction, reload }: { 
         {dirty && <span className="text-xs text-accent font-sans-ui">● Unsaved photo changes</span>}
       </div>
 
-      <div className="mt-6">
+      <div
+        className="mt-6"
+        onDragOver={(e) => { e.preventDefault(); }}
+        onDrop={(e) => {
+          e.preventDefault();
+          if (e.dataTransfer?.files?.length) uploadFiles(e.dataTransfer.files);
+        }}
+      >
         <p className="font-sans-ui text-sm font-medium mb-2">Photos ({listing.photos.length} total · {visibleCount} will be visible after save)</p>
         <div className="flex flex-col gap-2 mb-3 font-sans-ui">
           <div className="flex flex-col sm:flex-row gap-2">
@@ -545,7 +599,7 @@ function ListingEditor({ listing, interest, tenantUrl, adminAction, reload }: { 
             <Button onClick={() => fileRef.current?.click()} disabled={uploading} variant="default" className="bg-primary hover:bg-primary/90">
               {uploading ? "Uploading…" : "📷 Upload from device"}
             </Button>
-            <span className="text-xs text-muted-foreground self-center">or paste an image URL ↓</span>
+            <span className="text-xs text-muted-foreground self-center">or drag & drop images here · or paste URL ↓</span>
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
             <Input value={photoUrl} onChange={(e) => setPhotoUrl(e.target.value)} placeholder="https://..." />

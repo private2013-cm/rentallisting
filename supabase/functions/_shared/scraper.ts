@@ -164,7 +164,19 @@ function extractGalleryPhotosFromViewerHtml(html: string): string[] {
   return dedupeKeepLargest(uniq(urls));
 }
 
+// Strict carousel-only extractor: cc_ft_* and uncropped_scaled_within_* are the
+// gallery image variants for the actual listing address. Side ads/recommendations
+// use small-thumb URLs (no cc_ft_ / no _uncropped_scaled_within_) so we exclude them.
+function extractCarouselPhotosFromHtml(html: string): string[] {
+  const re = /https:\/\/photos\.zillowstatic\.com\/fp\/[a-zA-Z0-9_-]+(?:-cc_ft_\d+|-uncropped_scaled_within_\d+_\d+)\.(?:jpg|jpeg|webp)/gi;
+  const matches = Array.from(html.matchAll(re)).map((m) => m[0]);
+  return dedupeKeepLargest(uniq(matches));
+}
+
 function extractGalleryPhotos(html: string, _markdown: string): string[] {
+  // Primary: any cc_ft_/uncropped_scaled_within_ URL anywhere in HTML — these are the address's photos
+  const fromHtml = extractCarouselPhotosFromHtml(html);
+  if (fromHtml.length) return fromHtml;
   const fromJson = extractGalleryPhotosFromNextData(html);
   if (fromJson.length) return fromJson;
   return extractGalleryPhotosFromViewerHtml(html);
@@ -313,6 +325,30 @@ async function runSearchQuery(apiKey: string, query: string, limit: number): Pro
   }
 }
 
+async function scrapeZillowSearchPage(apiKey: string, zip: string, mode: "rent" | "sale", limit: number): Promise<string[]> {
+  // Hit Zillow's public search results page directly through Firecrawl, then pull homedetails URLs.
+  const path = mode === "sale" ? `${zip}/` : `${zip}/rentals/`;
+  const url = `https://www.zillow.com/homes/${path}`;
+  try {
+    const res = await fetch(FIRECRAWL_URL, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ url, formats: ["html"], onlyMainContent: false, waitFor: 2000 }),
+    });
+    if (!res.ok) {
+      console.log(`Zillow search-page ${res.status}: ${(await res.text()).slice(0, 200)}`);
+      return [];
+    }
+    const json = await res.json();
+    const html: string = json?.data?.html ?? json?.data?.rawHtml ?? json?.html ?? "";
+    const matches = Array.from(html.matchAll(/https:\/\/www\.zillow\.com\/homedetails\/[^"'\s<>]+/gi)).map((m) => m[0].replace(/&amp;/g, "&"));
+    return uniq(matches).slice(0, limit + 10);
+  } catch (e) {
+    console.log("zillow search page err", (e as Error).message);
+    return [];
+  }
+}
+
 export async function searchRentals(filters: SearchFilters): Promise<SearchResult> {
   const apiKey = Deno.env.get("FIRECRAWL_API_KEY");
   if (!apiKey) return { urls: [], modeUsed: filters.mode ?? "rent", fallbackUsed: false };
@@ -321,9 +357,13 @@ export async function searchRentals(filters: SearchFilters): Promise<SearchResul
 
   const collect = async (mode: "rent" | "sale") => {
     const queries = buildQueries(filters, mode);
-    const all = (await Promise.all(queries.map((query) => runSearchQuery(apiKey, query, limit)))).flat();
+    const [searchHits, pageHits] = await Promise.all([
+      Promise.all(queries.map((query) => runSearchQuery(apiKey, query, limit))).then((a) => a.flat()),
+      scrapeZillowSearchPage(apiKey, filters.zip, mode, limit),
+    ]);
+    const all = [...pageHits, ...searchHits];
     const isDetail = (u: string) => /zillow\.com\/homedetails\//i.test(u);
-    return dedupeKeepLargest(uniq(all.filter(isDetail))).slice(0, limit);
+    return uniq(all.filter(isDetail)).slice(0, limit);
   };
 
   const first = await collect(requestedMode);
@@ -334,3 +374,4 @@ export async function searchRentals(filters: SearchFilters): Promise<SearchResul
   const fallback = await collect("sale");
   return { urls: fallback, modeUsed: "sale", fallbackUsed: fallback.length > 0 };
 }
+
