@@ -245,6 +245,7 @@ const AdminPage = () => {
                   ><Save className="w-4 h-4 mr-2" />Save</Button>
                 </div>
               </Card>
+              <BulkListingsBar listings={listings} adminAction={adminAction} reload={load} />
               {listings.map(l => (
                 <ListingEditor key={l.id} listing={l} interest={interestCounts[l.id] ?? { yes: 0, no: 0 }} tenantUrl={tenantUrl} adminAction={adminAction} reload={load} />
               ))}
