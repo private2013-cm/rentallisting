@@ -174,12 +174,15 @@ function extractCarouselPhotosFromHtml(html: string): string[] {
 }
 
 function extractGalleryPhotos(html: string, _markdown: string): string[] {
-  // Primary: any cc_ft_/uncropped_scaled_within_ URL anywhere in HTML — these are the address's photos
+  // Combine all sources — Zillow lazy-loads carousel, so the FULL set lives in __NEXT_DATA__
+  // JSON (responsivePhotos / hugePhotos), while the rendered HTML only has the first 1–2.
+  // Concatenate, then dedupe by fingerprint keeping the largest variant.
   const fromHtml = extractCarouselPhotosFromHtml(html);
-  if (fromHtml.length) return fromHtml;
   const fromJson = extractGalleryPhotosFromNextData(html);
-  if (fromJson.length) return fromJson;
-  return extractGalleryPhotosFromViewerHtml(html);
+  const fromViewer = extractGalleryPhotosFromViewerHtml(html);
+  const combined = dedupeKeepLargest(uniq([...fromJson, ...fromHtml, ...fromViewer]));
+  if (combined.length) return combined;
+  return [];
 }
 
 function parsePrice(text: string): number | null {
