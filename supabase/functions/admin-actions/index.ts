@@ -319,6 +319,12 @@ Deno.serve(async (req) => {
       const g = requireGroup();
       assertOk(await supabase.from("listings").delete().eq("id", body.listing_id).eq("link_group_id", g.id), "Delete listing failed");
     }
+    else if (action === "delete_listings") {
+      const g = requireGroup();
+      const ids: string[] = Array.isArray(body.ids) ? body.ids.map(String) : [];
+      if (!ids.length) throw new Error("No listings selected");
+      assertOk(await supabase.from("listings").delete().in("id", ids).eq("link_group_id", g.id), "Bulk delete listings failed");
+    }
     else if (action === "update_setting") {
       if (!auth.isMaster) throw new Error("Only the super admin can change global defaults.");
       assertOk(await supabase.from("app_settings").upsert({ key: body.setting_key, value: body.value, updated_at: new Date().toISOString() }), "Update setting failed");
