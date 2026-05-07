@@ -164,7 +164,19 @@ function extractGalleryPhotosFromViewerHtml(html: string): string[] {
   return dedupeKeepLargest(uniq(urls));
 }
 
+// Strict carousel-only extractor: cc_ft_* and uncropped_scaled_within_* are the
+// gallery image variants for the actual listing address. Side ads/recommendations
+// use small-thumb URLs (no cc_ft_ / no _uncropped_scaled_within_) so we exclude them.
+function extractCarouselPhotosFromHtml(html: string): string[] {
+  const re = /https:\/\/photos\.zillowstatic\.com\/fp\/[a-zA-Z0-9_-]+(?:-cc_ft_\d+|-uncropped_scaled_within_\d+_\d+)\.(?:jpg|jpeg|webp)/gi;
+  const matches = Array.from(html.matchAll(re)).map((m) => m[0]);
+  return dedupeKeepLargest(uniq(matches));
+}
+
 function extractGalleryPhotos(html: string, _markdown: string): string[] {
+  // Primary: any cc_ft_/uncropped_scaled_within_ URL anywhere in HTML — these are the address's photos
+  const fromHtml = extractCarouselPhotosFromHtml(html);
+  if (fromHtml.length) return fromHtml;
   const fromJson = extractGalleryPhotosFromNextData(html);
   if (fromJson.length) return fromJson;
   return extractGalleryPhotosFromViewerHtml(html);
